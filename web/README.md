@@ -26,19 +26,23 @@ python3 -m http.server 3000      # then open http://localhost:3000
 
 ## Deploy to Vercel
 
-No configuration needed — it deploys as a static site.
+No configuration needed — it deploys as a static site. Pick whichever is easiest.
 
-**Option A — dashboard**
-1. Push this repo to GitHub (already done).
-2. On vercel.com: *Add New → Project → Import* `wouapit999/wouapit999`.
-3. Set **Root Directory** to `web`. Framework preset: **Other**. Deploy.
+**Option A — one-click button** (clones the repo into your account and deploys `web/`):
 
-**Option B — CLI**
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwouapit999%2Fwouapit999&root-directory=web&project-name=wouapit-androman&framework=null)
+
+**Option B — import the existing repo** (no clone, keeps this repo as the source):
+1. Go to <https://vercel.com/new> and pick **wouapit999/wouapit999** from your GitHub.
+2. Set **Root Directory** to `web`.
+3. Framework preset: **Other**. Click **Deploy**.
+
+**Option C — CLI** (run on your own machine, where you're logged in):
 ```bash
 npm i -g vercel
 cd web
-vercel            # preview
-vercel --prod     # production
+vercel login      # opens your browser to authenticate
+vercel --prod     # deploys web/ to production
 ```
 
 `vercel.json` enables clean URLs and sets a `Permissions-Policy: usb=(self)`
