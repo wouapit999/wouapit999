@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wouapit-androman"
+version = "1.0.0"
+description = "Free, fully-unlocked Android toolkit: switch a Redmi/Xiaomi phone's USB mode from charging to File Transfer (MTP) plus a Dr.Fone-style device manager."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "wouapit999" }]
+keywords = ["android", "adb", "usb", "mtp", "redmi", "xiaomi", "file-transfer", "device-manager"]
+classifiers = [
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+# No third-party runtime dependencies: standard library only (tkinter ships with Python).
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/wouapit999/wouapit999"
+
+[project.scripts]
+wouapit-androman = "wouapit_androman.cli:main"
+
+[project.gui-scripts]
+wouapit-androman-gui = "wouapit_androman.gui:launch"
+
+[tool.setuptools]
+packages = ["wouapit_androman"]
