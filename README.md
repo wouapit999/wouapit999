@@ -23,6 +23,8 @@ cd wouapit999/Wouapit-Androman
 - 🗄 Full backup & restore, 📸 screenshots & screen recording, 🖥 screen mirroring
 - 🧰 Reboot tools, logcat, contacts/SMS export, shell console
 
+**🌐 Web console & UI:** a Vercel-ready site lives in [`web/`](./web) — product UI, copy-paste ADB commands, and in-browser WebUSB device detection.
+
 <!---
 wouapit999/wouapit999 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
 You can click the Preview link to take a look at your changes.

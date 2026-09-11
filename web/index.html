@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wouapit-Androman — Free Android Toolkit</title>
+  <meta name="description" content="Switch your Redmi / Xiaomi phone from charging to File Transfer (MTP) from your computer, plus a full device manager. Every feature unlocked, free." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%B1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- ================= NAV ================= -->
+  <header class="nav">
+    <a class="brand" href="#top">
+      <span class="brand-mark">📱</span>
+      <span>Wouapit<span class="brand-accent">-Androman</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#console">Console</a>
+      <a href="#features">Features</a>
+      <a href="#setup">Setup</a>
+      <a href="#recovery">Locked out?</a>
+      <a href="#get">Get it</a>
+    </nav>
+    <div class="nav-actions">
+      <span class="badge" title="There is no paid tier — this is the only edition.">Premium · Activated</span>
+      <button id="themeToggle" class="icon-btn" aria-label="Toggle theme" title="Toggle light / dark">◐</button>
+    </div>
+  </header>
+
+  <!-- ================= HERO ================= -->
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Free · Open source · No upgrade wall</span>
+        <h1>Flip your Redmi from <span class="strike">charging</span> to <span class="grad">File&nbsp;Transfer</span> — in one click.</h1>
+        <p class="lede">
+          Wouapit-Androman is a full Android device toolkit. Switch USB modes, move files,
+          manage apps, back up, screenshot and mirror your screen — all from your computer,
+          with every feature unlocked.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#console">Open the console</a>
+          <a class="btn btn-ghost" href="#get">Download &amp; install</a>
+        </div>
+        <ul class="hero-meta">
+          <li>✓ Works with Redmi, POCO, Mi &amp; any Android</li>
+          <li>✓ No account, no trial, no ads</li>
+          <li>✓ Standard ADB under the hood</li>
+        </ul>
+      </div>
+
+      <!-- Phone mockup -->
+      <div class="hero-art" aria-hidden="true">
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="usb-pill" id="heroPill">USB: Charging only</div>
+            <button class="switch-btn" id="heroSwitch">
+              <span class="switch-ic">🔄</span> Switch to File Transfer
+            </button>
+            <div class="hero-rows">
+              <div class="hero-row"><span>📁 Files</span><b>12,904</b></div>
+              <div class="hero-row"><span>📦 Apps</span><b>187</b></div>
+              <div class="hero-row"><span>🔋 Battery</span><b>84%</b></div>
+              <div class="hero-row"><span>💾 Storage</span><b>41 / 128 GB</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="glow"></div>
+      </div>
+    </section>
+
+    <!-- ================= CONSOLE ================= -->
+    <section id="console" class="section">
+      <div class="section-head">
+        <h2>Device console</h2>
+        <p>The same interface as the desktop app. Connect a phone over WebUSB to read it live, or copy the exact command to run.</p>
+      </div>
+
+      <div class="console">
+        <!-- Device bar -->
+        <div class="device-bar">
+          <div class="device-card">
+            <div class="device-avatar" id="devAvatar">📱</div>
+            <div class="device-meta">
+              <strong id="devName">No device connected</strong>
+              <span id="devSub">Connect over WebUSB (Chrome/Edge) or use the desktop app</span>
+            </div>
+          </div>
+          <div class="device-actions">
+            <span class="mode-chip" id="modeChip">USB: unknown</span>
+            <button class="btn btn-primary sm" id="connectBtn">Connect device</button>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-tab="usb" role="tab">USB Mode</button>
+          <button class="tab" data-tab="files" role="tab">Files</button>
+          <button class="tab" data-tab="apps" role="tab">Apps</button>
+          <button class="tab" data-tab="backup" role="tab">Backup</button>
+          <button class="tab" data-tab="screen" role="tab">Screen</button>
+          <button class="tab" data-tab="tools" role="tab">Tools</button>
+        </div>
+
+        <!-- USB panel -->
+        <div class="panel is-active" data-panel="usb">
+          <div class="panel-grid">
+            <div>
+              <h3>Connection mode</h3>
+              <p class="muted">Pick how the phone appears to the computer. The headline action turns off “charging only” and enables file transfer.</p>
+              <div class="mode-grid" id="modeGrid">
+                <button class="mode-tile primary" data-mode="mtp">
+                  <span class="mode-ic">🔄</span><b>File Transfer (MTP)</b><small>Move photos, videos &amp; files</small>
+                </button>
+                <button class="mode-tile" data-mode="ptp"><span class="mode-ic">📷</span><b>Photo (PTP)</b><small>Camera / photo import</small></button>
+                <button class="mode-tile" data-mode="rndis"><span class="mode-ic">🌐</span><b>USB Tethering</b><small>Share phone network</small></button>
+                <button class="mode-tile" data-mode="midi"><span class="mode-ic">🎹</span><b>MIDI</b><small>Instrument mode</small></button>
+                <button class="mode-tile" data-mode="charging"><span class="mode-ic">🔌</span><b>Charging only</b><small>No data</small></button>
+              </div>
+            </div>
+            <div class="cmd-side">
+              <h3>Command</h3>
+              <p class="muted">This is exactly what runs — no magic, just ADB.</p>
+              <div class="cmd" id="cmdBox">
+                <code id="cmdText">adb shell svc usb setFunctions mtp</code>
+                <button class="copy" data-copy="#cmdText" title="Copy">⧉</button>
+              </div>
+              <div class="cli-note" id="cliStatus">Choose a mode to see the command.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Files panel -->
+        <div class="panel" data-panel="files">
+          <h3>File transfer</h3>
+          <div class="rowset">
+            <div class="cmd"><code>wouapit-androman transfer</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>wouapit-androman pull /sdcard/DCIM ./photos</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>wouapit-androman push ./movie.mp4 /sdcard/Download/</code><button class="copy" data-copy="prev">⧉</button></div>
+          </div>
+          <p class="muted">One-click “Export all photos”, folder browsing and drag-free transfers in the desktop app.</p>
+        </div>
+
+        <!-- Apps panel -->
+        <div class="panel" data-panel="apps">
+          <h3>App manager</h3>
+          <div class="rowset">
+            <div class="cmd"><code>wouapit-androman apps</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>adb install app.apk</code><button class="copy" data-copy="prev">⧉</button></div>
+          </div>
+          <p class="muted">List, install, uninstall and back up any app’s APK to your computer.</p>
+        </div>
+
+        <!-- Backup panel -->
+        <div class="panel" data-panel="backup">
+          <h3>Backup &amp; restore</h3>
+          <div class="rowset">
+            <div class="cmd"><code>wouapit-androman backup --out phone.ab</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>adb restore phone.ab</code><button class="copy" data-copy="prev">⧉</button></div>
+          </div>
+          <p class="muted">Full-device archive using Android’s built-in backup. You confirm on the phone.</p>
+        </div>
+
+        <!-- Screen panel -->
+        <div class="panel" data-panel="screen">
+          <h3>Screen capture &amp; mirror</h3>
+          <div class="rowset">
+            <div class="cmd"><code>wouapit-androman screenshot</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>wouapit-androman record --seconds 15</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>scrcpy</code><button class="copy" data-copy="prev">⧉</button></div>
+          </div>
+          <p class="muted">Capture stills, record video and mirror the live screen to your desktop.</p>
+        </div>
+
+        <!-- Tools panel -->
+        <div class="panel" data-panel="tools">
+          <h3>System tools</h3>
+          <div class="rowset">
+            <div class="cmd"><code>wouapit-androman info</code><button class="copy" data-copy="prev">⧉</button></div>
+            <div class="cmd"><code>wouapit-androman reboot recovery</code><button class="copy" data-copy="prev">⧉</button></div>
+          </div>
+          <p class="muted">Device dashboard, reboot options, logcat, contacts/SMS export and a shell console.</p>
+        </div>
+      </div>
+      <p class="fineprint">WebUSB reads basic device identity in the browser. Switching modes and transferring files run through the desktop app’s ADB connection, which handles the phone’s authorization handshake.</p>
+    </section>
+
+    <!-- ================= FEATURES ================= -->
+    <section id="features" class="section">
+      <div class="section-head">
+        <h2>Everything, unlocked</h2>
+        <p>The feature set of a paid suite, with nothing held back behind an upgrade.</p>
+      </div>
+      <div class="feature-grid" id="featureGrid"></div>
+    </section>
+
+    <!-- ================= SETUP ================= -->
+    <section id="setup" class="section">
+      <div class="section-head">
+        <h2>Set up your Redmi in 3 steps</h2>
+        <p>MIUI needs USB debugging turned on so the computer can talk to the phone.</p>
+      </div>
+      <ol class="steps">
+        <li>
+          <span class="step-n">1</span>
+          <div>
+            <h4>Unlock Developer options</h4>
+            <p>Settings → About phone → tap <b>MIUI version</b> seven times.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-n">2</span>
+          <div>
+            <h4>Enable USB debugging</h4>
+            <p>Settings → Additional settings → Developer options → turn on <b>USB debugging</b> and <b>USB debugging (Security settings)</b>.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-n">3</span>
+          <div>
+            <h4>Authorize the computer</h4>
+            <p>Plug in, then tap <b>Allow</b> on the “Allow USB debugging?” prompt on the phone.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ================= RECOVERY (legit lockout help) ================= -->
+    <section id="recovery" class="section">
+      <div class="section-head">
+        <h2>Locked out of your own phone?</h2>
+        <p>Honest help for the “I forgot my own PIN” case.</p>
+      </div>
+
+      <div class="notice">
+        <strong>Wouapit-Androman does not bypass or crack lock screens.</strong>
+        There is no feature here that defeats someone else’s pattern, PIN or password, and none that
+        unlocks a phone you don’t own. Tools that claim to do that mostly exist to open stolen devices,
+        and we won’t build that. If you’re locked out of a device that is yours, the safe, supported
+        routes below all prove ownership and erase the screen lock by resetting the phone.
+      </div>
+
+      <div class="recovery-grid">
+        <div class="rec-card">
+          <span class="rec-ic">🔎</span>
+          <h4>Find Device (remote erase)</h4>
+          <p>Sign in to your <b>Xiaomi account</b> at i.mi.com or your <b>Google account</b> at google.com/android/find, select the device and choose <b>Erase</b>. Removes the lock using credentials only you have.</p>
+        </div>
+        <div class="rec-card">
+          <span class="rec-ic">♻️</span>
+          <h4>Factory reset (Recovery)</h4>
+          <p>Power off, hold <b>Volume Up + Power</b> to enter recovery, then <b>Wipe data / factory reset</b>. Erases everything and clears the lock. You’ll re-verify your account on first boot.</p>
+        </div>
+        <div class="rec-card">
+          <span class="rec-ic">🔓</span>
+          <h4>Mi Unlock (bootloader)</h4>
+          <p>Xiaomi’s official <b>Mi Unlock</b> tool unlocks the bootloader after signing in to the Mi account bound to the phone and a mandatory waiting period. For advanced, owner-authorized reflashing.</p>
+        </div>
+      </div>
+      <p class="fineprint">All three require that you can sign in to the account on the device, and all erase data — that’s what keeps your phone (and everyone else’s) safe from unauthorized access.</p>
+    </section>
+
+    <!-- ================= GET IT ================= -->
+    <section id="get" class="section get">
+      <div class="section-head">
+        <h2>Get Wouapit-Androman</h2>
+        <p>No installer bloat. Clone, run, done.</p>
+      </div>
+      <div class="get-box">
+        <div class="cmd big"><code>git clone https://github.com/wouapit999/wouapit999.git</code><button class="copy" data-copy="prev">⧉</button></div>
+        <div class="cmd big"><code>cd wouapit999/Wouapit-Androman &amp;&amp; ./run.sh</code><button class="copy" data-copy="prev">⧉</button></div>
+        <div class="get-links">
+          <a class="btn btn-primary" href="https://github.com/wouapit999/wouapit999/tree/main/Wouapit-Androman" target="_blank" rel="noopener">View on GitHub</a>
+          <a class="btn btn-ghost" href="https://developer.android.com/tools/releases/platform-tools" target="_blank" rel="noopener">Get ADB platform-tools</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div>
+      <span class="brand-mark">📱</span> <b>Wouapit-Androman</b>
+      <span class="muted">— free Android toolkit. Not affiliated with any commercial product.</span>
+    </div>
+    <div class="muted">Uses standard ADB. Requires a device you own with USB debugging enabled.</div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
