@@ -41,6 +41,10 @@ export const getContext = cache(async (): Promise<AuthContext | null> => {
   if (!session || session.mfaPending) return null;
   const user = session.user;
   if (user.status !== "ACTIVE") return null;
+  if (user.organizationId) {
+    const org = await db.organization.findUnique({ where: { id: user.organizationId }, select: { status: true } });
+    if (org?.status !== "ACTIVE") return null; // suspended/archived organizations lose access immediately
+  }
 
   const roles = await db.userRole.findMany({
     where: { userId: user.id, role: { active: true, archived: false } },

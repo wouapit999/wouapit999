@@ -58,13 +58,16 @@ export const STAFF_NAV: NavSection[] = [
       { href: "/documents", key: "nav.documents", any: ["document.view"] },
       { href: "/reports", key: "nav.reports", any: ["report.operational.view", "report.financial.view"] },
       {
-        href: "/admin/general",
+        href: "/admin",
         key: "nav.admin",
         any: [
           "settings.general.manage",
           "settings.branding.manage",
           "settings.roles.manage",
           "settings.security.manage",
+          "settings.financial.manage",
+          "settings.notifications.manage",
+          "settings.integrations.manage",
           "users.view",
           "audit.view",
           "system.status.view",

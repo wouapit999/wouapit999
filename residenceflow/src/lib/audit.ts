@@ -48,7 +48,7 @@ export async function audit(
   const meta = await requestMeta().catch(() => ({ ip: undefined, correlationId: undefined }));
   await tx.auditLog.create({
     data: {
-      organizationId: orgOverride ?? ctx?.organizationId ?? null,
+      organizationId: orgOverride !== undefined ? orgOverride || null : ctx?.organizationId || null,
       actorId: ctx?.user.id ?? null,
       actorName: ctx?.user.name ?? null,
       action: input.action,
