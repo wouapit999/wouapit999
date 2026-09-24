@@ -4,7 +4,7 @@ import { dailyJob, runOnce } from "@/services/jobs";
 import { todayUtc } from "@/services/billing";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /** Invoked by Vercel Cron (Authorization: Bearer $CRON_SECRET). */
 export async function GET(req: Request) {
