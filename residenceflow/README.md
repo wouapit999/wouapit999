@@ -36,6 +36,7 @@ npm run db:seed
 npm run dev
 ```
 
+- If you ever see "@prisma/client did not initialize yet", run `npx prisma generate` once.
 - `npm run db:seed` loads the development demo data and accounts (it refuses to run in production).
 - `npm run dev` serves the app at http://localhost:3000.
 - No PostgreSQL installed? Start one with `docker compose up -d db` and keep the default `DATABASE_URL` from `.env.example`.
