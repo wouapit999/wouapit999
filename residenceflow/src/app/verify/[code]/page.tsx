@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
+import { requestMeta } from "@/lib/auth/session";
 import { getT } from "@/i18n";
 import { formatDate, formatMoney } from "@/lib/format";
 import { Badge } from "@/components/ui";
@@ -19,7 +20,11 @@ const CODE_RE = /^[A-Za-z0-9_-]{8,64}$/;
 export default async function VerifyReceiptPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const { t, locale } = await getT(verifyMessages);
-  const receipt = CODE_RE.test(code)
+  // Per-IP limit: 60 lookups per 15 minutes, tracked like other anonymous attempts.
+  const meta = await requestMeta();
+  const recent = await db.loginAttempt.count({ where: { ip: meta.ip, reason: "verify", createdAt: { gte: new Date(Date.now() - 15 * 60_000) } } });
+  if (recent < 60) await db.loginAttempt.create({ data: { identifier: "receipt-verify", ip: meta.ip, success: true, reason: "verify" } });
+  const receipt = CODE_RE.test(code) && recent < 60
     ? await db.receipt.findUnique({
         where: { verificationCode: code },
         select: {

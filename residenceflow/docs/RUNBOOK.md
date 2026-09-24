@@ -58,3 +58,11 @@ Verify: log in on a staging deployment pointed at the restored DB, compare invoi
 curl -H "Authorization: Bearer $CRON_SECRET" "https://<app>/api/cron/daily?force=1"
 ```
 Safe: every step is idempotent.
+
+## Restore drill log
+
+| Date | Database | Dump size | Dump time | Restore time | Verification | Result |
+|---|---|---|---|---|---|---|
+| 2026-09-24 | seeded development DB (69 invoices, 6 payments, 5 265 500 XAF paid) | 338 KB | 0.4 s | 0.4 s | row counts and paid totals identical in source and restored DB; `prisma migrate status` reports up to date | PASS |
+
+Repeat the drill after every schema migration and at least quarterly on a production snapshot; add a row here each time.

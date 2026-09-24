@@ -73,6 +73,12 @@ model Organization {
   collectionNotes CollectionNote[]
   meters        Meter[]
   keyRegister   KeyRecord[]
+  applications  RentalApplication[]
+  paymentPlans  PaymentPlan[]
+  reconciliations ReconciliationSession[]
+  utilityCharges UtilityCharge[]
+  purchaseOrders PurchaseOrder[]
+  supportAccess SupportAccess[]
 }
 
 model OrganizationSettings {
@@ -233,6 +239,7 @@ model Session {
   expiresAt   DateTime
   revokedAt   DateTime?
   reauthAt    DateTime?
+  supportAccessId String?
 
   @@index([userId])
 }
@@ -400,6 +407,7 @@ model Unit {
   parcels       Parcel[]
   expenses      Expense[]
   meters        Meter[]
+  applications  RentalApplication[]
 
   @@unique([propertyId, number])
   @@index([organizationId, status])
@@ -453,6 +461,7 @@ model Tenant {
   messages    Message[]
   collectionNotes CollectionNote[]
   visitors    VisitorLog[]
+  paymentPlans PaymentPlan[]
 
   @@unique([organizationId, reference])
   @@index([organizationId, status])
@@ -739,9 +748,122 @@ model DepositTransaction {
   description  String          @default("")
   method       String?
   status       String          @default("APPROVED") // PENDING_APPROVAL | APPROVED | REJECTED
+  documentId   String?
   createdById  String?
   approvedById String?
   createdAt    DateTime        @default(now())
+}
+
+model RentalApplication {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  reference      String
+  unitId         String?
+  unit           Unit?        @relation(fields: [unitId], references: [id])
+  applicantName  String
+  applicantEmail String       @default("")
+  applicantPhone String       @default("")
+  applicantType  String       @default("INDIVIDUAL")
+  employer       String       @default("")
+  monthlyIncome  Decimal?     @db.Decimal(14, 2)
+  householdSize  Int          @default(1)
+  desiredMoveIn  DateTime?    @db.Date
+  notes          String       @default("")
+  checklist      Json         @default("[]") // [{item, received}]
+  reviewNotes    String       @default("") // internal
+  status         String       @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | APPROVED | REJECTED | WITHDRAWN | CONVERTED
+  decisionReason String       @default("")
+  reservationFee Decimal      @default(0) @db.Decimal(14, 2)
+  reservationPaid Boolean     @default(false)
+  tenantId       String?
+  leaseId        String?
+  reviewedById   String?
+  decidedAt      DateTime?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, reference])
+  @@index([organizationId, status])
+}
+
+model PaymentPlan {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id])
+  totalAmount    Decimal      @db.Decimal(14, 2)
+  status         String       @default("ACTIVE") // ACTIVE | COMPLETED | DEFAULTED | CANCELLED
+  notes          String       @default("")
+  createdById    String?
+  approvedById   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  installments PaymentPlanInstallment[]
+
+  @@index([organizationId, status])
+}
+
+model PaymentPlanInstallment {
+  id        String      @id @default(uuid())
+  planId    String
+  plan      PaymentPlan @relation(fields: [planId], references: [id])
+  sequence  Int
+  dueDate   DateTime    @db.Date
+  amount    Decimal     @db.Decimal(14, 2)
+  paidAmount Decimal    @default(0) @db.Decimal(14, 2)
+  status    String      @default("PENDING") // PENDING | PAID | OVERDUE | MISSED
+
+  @@unique([planId, sequence])
+}
+
+model ReconciliationSession {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  account        String // e.g. "MTN MoMo", "Afriland current account"
+  periodStart    DateTime     @db.Date
+  periodEnd      DateTime     @db.Date
+  status         String       @default("OPEN") // OPEN | COMPLETED
+  statementLines Json         @default("[]") // [{date, reference, amount, description, paymentId?, matched}]
+  matchedCount   Int          @default(0)
+  unmatchedCount Int          @default(0)
+  notes          String       @default("")
+  createdById    String?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+}
+
+model UtilityCharge {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  meterId        String
+  meter          Meter        @relation(fields: [meterId], references: [id])
+  readingId      String       @unique
+  reading        MeterReading @relation(fields: [readingId], references: [id])
+  leaseId        String?
+  consumption    Decimal      @db.Decimal(14, 3)
+  amount         Decimal      @db.Decimal(14, 2)
+  invoiceId      String?
+  createdAt      DateTime     @default(now())
+}
+
+model SupportAccess {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  platformUserId String
+  targetUserId   String
+  reason         String
+  ticketRef      String       @default("")
+  startedAt      DateTime     @default(now())
+  expiresAt      DateTime
+  endedAt        DateTime?
+  sessionId      String?
 }
 
 model CollectionNote {
@@ -852,6 +974,7 @@ model Vendor {
   users       User[]
   workOrders  MaintenanceRequest[]
   expenses    Expense[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model Expense {
@@ -873,12 +996,40 @@ model Expense {
   expenseDate    DateTime            @db.Date
   status         String              @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | PAID | REJECTED
   billReference  String              @default("")
+  recurrence     String              @default("NONE") // NONE | MONTHLY | QUARTERLY | ANNUAL
+  nextOccurrence DateTime?           @db.Date
+  purchaseOrderId String?
+  purchaseOrder  PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id])
   createdById    String?
   approvedById   String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
+  documents Document[]
+
   @@index([organizationId, expenseDate])
+}
+
+model PurchaseOrder {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  number         String
+  propertyId     String?
+  vendorId       String?
+  vendor         Vendor?      @relation(fields: [vendorId], references: [id])
+  description    String
+  amount         Decimal      @db.Decimal(14, 2)
+  status         String       @default("REQUESTED") // REQUESTED | APPROVED | REJECTED | ORDERED | RECEIVED | CANCELLED
+  justification  String       @default("")
+  requestedById  String?
+  approvedById   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  expenses Expense[]
+
+  @@unique([organizationId, number])
 }
 
 // ───────────────────────────── Concierge ─────────────────────────────
@@ -1010,6 +1161,7 @@ model Meter {
   tariff         Decimal      @default(0) @db.Decimal(14, 4)
   fixedFee       Decimal      @default(0) @db.Decimal(14, 2)
   readings       MeterReading[]
+  charges        UtilityCharge[]
 }
 
 model MeterReading {
@@ -1018,8 +1170,10 @@ model MeterReading {
   meter       Meter    @relation(fields: [meterId], references: [id])
   readingDate DateTime @db.Date
   value       Decimal  @db.Decimal(14, 3)
+  photoDocumentId String?
   recordedById String?
   createdAt   DateTime @default(now())
+  charge      UtilityCharge?
 }
 
 // ───────────────────────────── Content ─────────────────────────────
@@ -1041,6 +1195,8 @@ model Document {
   leaseId        String?
   lease          Lease?       @relation(fields: [leaseId], references: [id])
   workOrderId    String?
+  expenseId      String?
+  expense        Expense?     @relation(fields: [expenseId], references: [id])
   visibleToTenant Boolean     @default(false)
   sensitive      Boolean      @default(false)
   expiresAt      DateTime?

@@ -53,8 +53,32 @@ export const DEFAULT_TEMPLATES: Record<string, { en: { title: string; body: stri
     fr: { title: "Visiteur arrivé", body: "{{visitor}} s'est présenté(e) à l'accueil." },
   },
   PARCEL_RECEIVED: {
-    en: { title: "Parcel received", body: "A parcel is waiting for you at the front desk." },
-    fr: { title: "Colis reçu", body: "Un colis vous attend à l'accueil." },
+    en: { title: "Parcel received", body: "A parcel for {{recipient}} is waiting at the front desk." },
+    fr: { title: "Colis reçu", body: "Un colis pour {{recipient}} vous attend à l'accueil." },
+  },
+  MESSAGE_RECEIVED: {
+    en: { title: "New message", body: "{{from}}: {{subject}}" },
+    fr: { title: "Nouveau message", body: "{{from}} : {{subject}}" },
+  },
+  MAINTENANCE_SUBMITTED: {
+    en: { title: "New maintenance request {{number}}", body: "{{title}} — {{location}}" },
+    fr: { title: "Nouvelle demande de maintenance {{number}}", body: "{{title}} — {{location}}" },
+  },
+  PAYMENT_SUBMITTED: {
+    en: { title: "Payment proof submitted", body: "{{tenant}} submitted {{amount}} for verification." },
+    fr: { title: "Preuve de paiement soumise", body: "{{tenant}} a soumis {{amount}} pour vérification." },
+  },
+  DOCUMENT_EXPIRY: {
+    en: { title: "Document expiring: {{name}}", body: "Expires on {{date}}." },
+    fr: { title: "Document arrivant à expiration : {{name}}", body: "Expire le {{date}}." },
+  },
+  ACCOUNT_INVITATION: {
+    en: { title: "Your {{app}} account", body: "You have been invited to {{app}}. Activate your account within 72 hours: {{link}}" },
+    fr: { title: "Votre compte {{app}}", body: "Vous avez été invité(e) sur {{app}}. Activez votre compte sous 72 heures : {{link}}" },
+  },
+  PASSWORD_RESET: {
+    en: { title: "Password reset", body: "Use this link within 30 minutes to reset your password: {{link}}. If you did not request this, ignore this email." },
+    fr: { title: "Réinitialisation du mot de passe", body: "Utilisez ce lien sous 30 minutes pour réinitialiser votre mot de passe : {{link}}. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail." },
   },
   ANNOUNCEMENT: {
     en: { title: "{{title}}", body: "A new building announcement has been posted." },

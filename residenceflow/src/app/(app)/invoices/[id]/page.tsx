@@ -10,7 +10,7 @@ import { Alert, Badge, Card, Input, LinkButton, PageHeader, Table, Td, Th, Texta
 import { InvoiceView } from "@/components/finance/invoice-view";
 import { PrintButton } from "@/components/print-button";
 import { invoiceBalance } from "@/services/billing";
-import { creditInvoiceAction, issueInvoiceAction, voidInvoiceAction } from "../actions";
+import { creditInvoiceAction, emailInvoiceAction, issueInvoiceAction, voidInvoiceAction } from "../actions";
 import { financeMessages, invoiceMessages } from "../messages";
 
 export const metadata = { title: "Invoice" };
@@ -54,6 +54,9 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
               <LinkButton variant="secondary" href={`/invoices/statement/${invoice.tenant.id}`}>{t("inv.statement")}</LinkButton>
               {invoice.status === "DRAFT" && can(ctx, "invoice.issue") && (
                 <InlineAction action={issueInvoiceAction} label={t("inv.issue")} variant="primary" confirm={t("inv.issueConfirm")} hidden={{ id: invoice.id }} />
+              )}
+              {can(ctx, "invoice.issue") && invoice.status !== "DRAFT" && invoice.status !== "VOID" && (
+                <InlineAction action={emailInvoiceAction} label={t("inv.email")} variant="secondary" hidden={{ id: invoice.id }} />
               )}
             </>
           }

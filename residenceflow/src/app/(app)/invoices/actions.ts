@@ -3,7 +3,10 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { appBaseUrl, emailConfigured, sendEmail } from "@/lib/notify/email";
+import { money } from "@/lib/money";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
 import { authorize, can, invoiceWhere, leaseWhere, tenantWhere } from "@/lib/auth/context";
 import { runAction, type ActionResult } from "@/lib/action";
 import { BusinessError, ForbiddenError } from "@/lib/errors";
@@ -114,6 +117,34 @@ export async function issueInvoiceAction(_p: ActionResult | null, fd: FormData):
 }
 
 const reasonSchema = z.string().trim().min(3).max(500);
+
+/** Emails an issued invoice summary (with a portal link) to the tenant's address. */
+export async function emailInvoiceAction(_p: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const r = await runAction(async () => {
+    const ctx = await authorize("invoice.issue");
+    const { id } = await loadScopedInvoice(ctx, z.string().uuid().parse(fd.get("id")));
+    const inv = await db.invoice.findUniqueOrThrow({ where: { id } });
+    if (inv.status === "DRAFT" || inv.status === "VOID") throw new BusinessError("inv.emailNotIssued");
+    const tenant = await db.tenant.findUniqueOrThrow({ where: { id: inv.tenantId }, select: { email: true, legalName: true, language: true } });
+    if (!tenant.email) throw new BusinessError("inv.emailMissing");
+    if (!emailConfigured()) throw new BusinessError("inv.emailNotConfigured");
+    const settings = await getOrgSettings(ctx.organizationId);
+    const fr = tenant.language !== "en";
+    const amount = `${money(inv.total).toFixed(0)} ${inv.currency}`;
+    const link = `${appBaseUrl()}/portal/billing/${inv.id}`;
+    await sendEmail({
+      to: tenant.email,
+      subject: fr ? `Facture ${inv.number} — ${settings?.appName ?? "ResidenceFlow"}` : `Invoice ${inv.number} — ${settings?.appName ?? "ResidenceFlow"}`,
+      text: fr
+        ? `Bonjour ${tenant.legalName},\n\nVotre facture ${inv.number} d'un montant de ${amount} est due le ${inv.dueDate.toISOString().slice(0, 10)}.\nConsultez-la et téléchargez-la ici : ${link}\n\n${settings?.companyName ?? ""}`
+        : `Hello ${tenant.legalName},\n\nYour invoice ${inv.number} for ${amount} is due on ${inv.dueDate.toISOString().slice(0, 10)}.\nView and download it here: ${link}\n\n${settings?.companyName ?? ""}`,
+      fromName: settings?.emailSenderName || settings?.appName,
+      replyTo: settings?.replyToEmail || undefined,
+    });
+    await audit(ctx, { action: "invoice.emailed", module: "billing", entityType: "Invoice", entityId: inv.id, metadata: { to: tenant.email.replace(/(.).+@/, "$1***@") } });
+  });
+  return tr(r.ok ? { ...r, message: "inv.emailed" } : r);
+}
 
 export async function voidInvoiceAction(_p: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const r = await runAction(async () => {

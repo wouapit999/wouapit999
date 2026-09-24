@@ -31,6 +31,8 @@ export interface AuthContext {
   propertyIds: "ALL" | string[];
   tenantId: string | null;
   vendorId: string | null;
+  /** Set while a platform support user acts inside an organization through a support-access grant. */
+  supportAccess: { id: string; expiresAt: Date } | null;
 }
 
 export { ForbiddenError };
@@ -41,6 +43,13 @@ export const getContext = cache(async (): Promise<AuthContext | null> => {
   if (!session || session.mfaPending) return null;
   const user = session.user;
   if (user.status !== "ACTIVE") return null;
+  let supportAccess: AuthContext["supportAccess"] = null;
+  if (session.supportAccessId) {
+    // Support-access sessions die with their grant: ended or expired grants invalidate the session.
+    const grant = await db.supportAccess.findUnique({ where: { id: session.supportAccessId }, select: { id: true, expiresAt: true, endedAt: true } });
+    if (!grant || grant.endedAt || grant.expiresAt < new Date()) return null;
+    supportAccess = { id: grant.id, expiresAt: grant.expiresAt };
+  }
   if (user.organizationId) {
     const org = await db.organization.findUnique({ where: { id: user.organizationId }, select: { status: true } });
     if (org?.status !== "ACTIVE") return null; // suspended/archived organizations lose access immediately
@@ -84,6 +93,7 @@ export const getContext = cache(async (): Promise<AuthContext | null> => {
     propertyIds,
     tenantId: user.tenantId,
     vendorId: user.vendorId,
+    supportAccess,
   };
 });
 

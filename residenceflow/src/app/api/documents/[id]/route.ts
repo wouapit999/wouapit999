@@ -12,7 +12,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const meta = await db.document.findFirst({
     where: { id, organizationId: ctx.organizationId },
-    select: { id: true, organizationId: true, tenantId: true, propertyId: true, leaseId: true, workOrderId: true, visibleToTenant: true, sensitive: true, uploadedById: true, name: true, mimeType: true },
+    select: { id: true, organizationId: true, tenantId: true, propertyId: true, leaseId: true, workOrderId: true, expenseId: true, visibleToTenant: true, sensitive: true, uploadedById: true, name: true, mimeType: true },
   });
   if (!meta || !(await canAccessDocument(ctx, meta))) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const doc = await db.document.findUniqueOrThrow({ where: { id }, select: { content: true } });

@@ -9,6 +9,8 @@ export const SEQUENCE_DEFAULTS: Record<string, { prefix: string; padding: number
   TENANT: { prefix: "TEN-", padding: 5 },
   PROPERTY: { prefix: "BLD-", padding: 3 },
   CREDIT_NOTE: { prefix: "CN-", padding: 5 },
+  APPLICATION: { prefix: "APP-", padding: 5 },
+  PURCHASE_ORDER: { prefix: "PO-", padding: 5 },
 };
 
 /**

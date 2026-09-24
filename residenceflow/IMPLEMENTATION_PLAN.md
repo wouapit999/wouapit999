@@ -46,6 +46,6 @@ Status legend: [x] done · [~] partial / integration point only · [ ] not start
 - [x] MFA
 - [x] Security review items in SECURITY.md (open items listed there)
 - [~] Monitoring — structured JSON logs, health endpoint, JobRun history; plug in Sentry/OTel at `src/lib/action.ts` & route handlers
-- [ ] Backup/restore drill on the production database (procedure in docs/RUNBOOK.md)
+- [~] Backup/restore drill — performed on the seeded development database (docs/RUNBOOK.md, "Restore drill log"); repeat on a production snapshot before go-live
 - [ ] Playwright end-to-end suite (route checklist in docs/ROUTES.md is the manual script)
 - [ ] Production-readiness review, penetration test

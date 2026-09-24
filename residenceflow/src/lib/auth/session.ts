@@ -13,11 +13,19 @@ export async function requestMeta() {
   return { ip, userAgent, correlationId };
 }
 
-export async function createSession(userId: string, opts: { timeoutMinutes: number; mfaPending?: boolean }) {
+/**
+ * Creates a session row and sets the cookie. `supportAccessId` binds the session to a
+ * controlled support-access grant (platform support acting as an organization administrator);
+ * such sessions become invalid as soon as the grant ends or expires.
+ */
+export async function createSession(
+  userId: string,
+  opts: { timeoutMinutes: number; mfaPending?: boolean; supportAccessId?: string },
+): Promise<{ sessionId: string; expiresAt: Date }> {
   const token = randomToken();
   const meta = await requestMeta();
   const expiresAt = new Date(Date.now() + opts.timeoutMinutes * 60_000);
-  await db.session.create({
+  const session = await db.session.create({
     data: {
       userId,
       tokenHash: hashToken(token),
@@ -26,7 +34,9 @@ export async function createSession(userId: string, opts: { timeoutMinutes: numb
       ip: meta.ip,
       userAgent: meta.userAgent,
       reauthAt: new Date(),
+      supportAccessId: opts.supportAccessId ?? null,
     },
+    select: { id: true },
   });
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
@@ -36,6 +46,7 @@ export async function createSession(userId: string, opts: { timeoutMinutes: numb
     path: "/",
     expires: expiresAt,
   });
+  return { sessionId: session.id, expiresAt };
 }
 
 /** Returns the live session row (not expired, not revoked) for the current cookie. */

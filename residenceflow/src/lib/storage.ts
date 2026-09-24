@@ -44,6 +44,7 @@ export interface StoreDocumentInput {
   propertyId?: string | null;
   leaseId?: string | null;
   workOrderId?: string | null;
+  expenseId?: string | null;
   visibleToTenant?: boolean;
   sensitive?: boolean;
   expiresAt?: Date | null;
@@ -75,6 +76,7 @@ export async function storeDocument(ctx: AuthContext, input: StoreDocumentInput,
       propertyId: input.propertyId ?? null,
       leaseId: input.leaseId ?? null,
       workOrderId: input.workOrderId ?? null,
+      expenseId: input.expenseId ?? null,
       visibleToTenant: input.visibleToTenant ?? false,
       sensitive: input.sensitive ?? false,
       expiresAt: input.expiresAt ?? null,
@@ -95,6 +97,7 @@ type DocMeta = {
   propertyId: string | null;
   leaseId: string | null;
   workOrderId: string | null;
+  expenseId?: string | null;
   visibleToTenant: boolean;
   sensitive: boolean;
   uploadedById: string | null;
@@ -116,6 +119,11 @@ export async function canAccessDocument(ctx: AuthContext, doc: DocMeta): Promise
     });
     if (wo && (wo.assignedToId === ctx.user.id || (ctx.vendorId && wo.vendorId === ctx.vendorId))) return true;
     if (wo && ctx.scope !== "OWN" && (ctx.propertyIds === "ALL" || ctx.propertyIds.includes(wo.propertyId))) return true;
+  }
+  // Expense attachments follow expense visibility (owners can review bills without document.view).
+  if (doc.expenseId && ctx.permissions.has("expense.view")) {
+    const e = await db.expense.findFirst({ where: { id: doc.expenseId, organizationId: ctx.organizationId }, select: { propertyId: true } });
+    if (e && (ctx.propertyIds === "ALL" || (e.propertyId && ctx.propertyIds.includes(e.propertyId)))) return true;
   }
   if (!ctx.permissions.has("document.view")) return false;
   if (doc.sensitive && !ctx.permissions.has("document.sensitive.view")) return false;

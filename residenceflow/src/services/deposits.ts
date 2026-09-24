@@ -121,6 +121,7 @@ export async function recordDepositTransaction(ctx: AuthContext, input: DepositT
         tenantId: deposit.lease.tenantId,
       }, tx);
       documentId = doc.id;
+      await tx.depositTransaction.update({ where: { id: created.id }, data: { documentId } });
     }
     const status = await refreshStatus(tx, deposit.id);
     await audit(ctx, {

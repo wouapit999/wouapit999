@@ -35,7 +35,13 @@ export default async function DepositDetailPage({ params }: { params: Promise<{ 
   const [settings, evidence] = await Promise.all([
     getOrgSettings(ctx.organizationId),
     db.document.findMany({
-      where: { organizationId: ctx.organizationId, leaseId: deposit.lease.id, category: "LEASE", name: { startsWith: "deposit-evidence-" } },
+      where: {
+        organizationId: ctx.organizationId,
+        OR: [
+          { id: { in: deposit.transactions.map((x) => x.documentId).filter((x): x is string => !!x) } },
+          { leaseId: deposit.lease.id, category: "LEASE", name: { startsWith: "deposit-evidence-" } }, // rows created before documentId existed
+        ],
+      },
       select: { id: true, name: true },
     }),
   ]);
