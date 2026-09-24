@@ -5,7 +5,7 @@ const PAYMENT = 500;
 
 async function readOutstanding(page: Page): Promise<number> {
   await page.goto("/portal/billing");
-  const value = page.locator("section[aria-label] .text-2xl").first();
+  const value = page.locator("section[aria-label] [data-testid=stat-value]").first();
   await expect(value).toBeVisible();
   const n = parseMoney((await value.textContent()) ?? "");
   expect(Number.isFinite(n)).toBe(true);

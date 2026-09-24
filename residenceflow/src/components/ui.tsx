@@ -70,7 +70,7 @@ export function Stat({ label, value, hint, tone = "default", href }: { label: st
   const inner = (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
-      <div className={cn("mt-1 break-words text-xl font-semibold leading-tight text-slate-900 dark:text-white sm:text-2xl", toneCls)}>{value}</div>
+      <div data-testid="stat-value" className={cn("mt-1 break-words text-xl font-semibold leading-tight text-slate-900 dark:text-white sm:text-2xl", toneCls)}>{value}</div>
       {hint && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</div>}
     </div>
   );
