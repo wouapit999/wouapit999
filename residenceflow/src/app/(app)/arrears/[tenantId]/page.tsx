@@ -13,13 +13,15 @@ import { COLLECTION_NOTE_KINDS, OPEN_INVOICE_STATUSES } from "@/services/finance
 import { addCollectionNoteAction } from "../actions";
 import { financeMessages } from "../../invoices/messages";
 import { arrearsMessages } from "../messages";
+import { planProgress } from "@/domain/payment-plan";
+import { paymentPlanMessages } from "../../payment-plans/messages";
 
 export const metadata = { title: "Arrears" };
 
 export default async function TenantArrearsPage({ params }: { params: Promise<{ tenantId: string }> }) {
   const { tenantId } = await params;
   const ctx = await requireContext("arrears.view");
-  const { t, locale } = await getT(financeMessages, arrearsMessages);
+  const { t, locale } = await getT(financeMessages, arrearsMessages, paymentPlanMessages);
   const tenant = await db.tenant.findFirst({ where: { AND: [tenantWhere(ctx), { id: tenantId }] }, select: { id: true, legalName: true, reference: true, phone: true, email: true } });
   if (!tenant) notFound();
   const [settings, invoices, notes] = await Promise.all([
@@ -33,6 +35,12 @@ export default async function TenantArrearsPage({ params }: { params: Promise<{ 
   ]);
   const authorIds = [...new Set(notes.map((n) => n.createdById).filter((x): x is string => !!x))];
   const authors = authorIds.length ? await db.user.findMany({ where: { id: { in: authorIds }, organizationId: ctx.organizationId }, select: { id: true, name: true } }) : [];
+  const plans = await db.paymentPlan.findMany({
+    where: { organizationId: ctx.organizationId, tenantId: tenant.id },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    include: { installments: { orderBy: { sequence: "asc" } } },
+  });
   const today = todayUtc();
   const fmt = { locale, currency: settings?.currency ?? "XAF" };
   const df = { dateFormat: settings?.dateFormat, timezone: settings?.timezone ?? "Africa/Douala" };
@@ -139,6 +147,44 @@ export default async function TenantArrearsPage({ params }: { params: Promise<{ 
             )}
           </Card>
         </div>
+      </div>
+
+      {/* Payment plans for this tenant (see /payment-plans). */}
+      <div className="mt-6">
+        <Card
+          title={t("pp.arrearsBlock")}
+          actions={
+            <>
+              <LinkButton variant="ghost" href="/payment-plans">{t("pp.viewAll")}</LinkButton>
+              {can(ctx, "arrears.manage") && aged.total.gt(0) && !plans.some((p) => p.status === "ACTIVE") && (
+                <LinkButton variant="secondary" href={`/payment-plans/new?tenantId=${tenant.id}`}>{t("pp.new")}</LinkButton>
+              )}
+            </>
+          }
+        >
+          {plans.length === 0 ? (
+            <p className="text-sm text-slate-500">{t("pp.arrearsNone")}</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
+              {plans.map((p) => {
+                const prog = planProgress(p.installments);
+                const next = p.status === "ACTIVE" ? p.installments.find((i) => i.status !== "PAID") : undefined;
+                return (
+                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link href={`/payment-plans/${p.id}`} className="font-medium text-[var(--brand)] hover:underline">{formatMoney(p.totalAmount, fmt)}</Link>
+                      <Badge status={p.status}>{t(`pp.status.${p.status}`)}</Badge>
+                      <span className="text-xs text-slate-500">{formatDay(p.createdAt, df)} · {p.installments.length} {t("pp.installments").toLowerCase()}</span>
+                    </div>
+                    <span className="text-xs tabular-nums text-slate-600 dark:text-slate-300">
+                      {t("pp.paid")} {formatMoney(prog.paid, fmt)} ({prog.percent}%){next ? ` · ${t("pp.nextDue")} ${formatDay(next.dueDate, df)}` : ""}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
       </div>
     </>
   );
