@@ -249,11 +249,11 @@ export function Alert({ tone = "info", children }: { tone?: "info" | "warn" | "e
 }
 
 /** Simple GET filter bar (search + selects) that keeps server-side filtering. */
-export function FilterBar({ children, action }: { children: ReactNode; action: string }) {
+export function FilterBar({ children, action, label = "Filter / Filtrer" }: { children: ReactNode; action: string; label?: string }) {
   return (
     <form method="get" action={action} className="mb-4 flex flex-wrap items-end gap-3">
       {children}
-      <button type="submit" className={buttonClass("secondary")}>Filter</button>
+      <button type="submit" className={buttonClass("secondary")}>{label}</button>
     </form>
   );
 }

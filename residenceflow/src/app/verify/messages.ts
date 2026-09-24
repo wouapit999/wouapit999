@@ -1,0 +1,38 @@
+import type { ModuleMessages } from "@/i18n";
+
+export const verifyMessages: ModuleMessages = {
+  en: {
+    "verify.title": "Receipt verification",
+    "verify.valid": "Valid receipt",
+    "verify.validHint": "This receipt was issued by the organization below and the payment is confirmed.",
+    "verify.reversed": "Receipt no longer valid",
+    "verify.reversedHint": "The payment behind this receipt has been reversed. This receipt must not be accepted as proof of payment.",
+    "verify.notFound": "Receipt not found",
+    "verify.notFoundHint": "No receipt matches this verification code. Check the code printed on the receipt.",
+    "verify.number": "Receipt number",
+    "verify.issued": "Issue date",
+    "verify.amount": "Amount",
+    "verify.organization": "Issued by",
+    "verify.status": "Status",
+    "verify.statusValid": "Valid",
+    "verify.statusReversed": "Reversed",
+    "verify.privacy": "For privacy reasons, no personal information about the payer is shown.",
+  },
+  fr: {
+    "verify.title": "Vérification de reçu",
+    "verify.valid": "Reçu valide",
+    "verify.validHint": "Ce reçu a été émis par l'organisation ci-dessous et le paiement est confirmé.",
+    "verify.reversed": "Reçu non valide",
+    "verify.reversedHint": "Le paiement correspondant à ce reçu a été contrepassé. Ce reçu ne doit pas être accepté comme preuve de paiement.",
+    "verify.notFound": "Reçu introuvable",
+    "verify.notFoundHint": "Aucun reçu ne correspond à ce code de vérification. Vérifiez le code imprimé sur le reçu.",
+    "verify.number": "Numéro de reçu",
+    "verify.issued": "Date d'émission",
+    "verify.amount": "Montant",
+    "verify.organization": "Émis par",
+    "verify.status": "Statut",
+    "verify.statusValid": "Valide",
+    "verify.statusReversed": "Contrepassé",
+    "verify.privacy": "Pour des raisons de confidentialité, aucune information personnelle sur le payeur n'est affichée.",
+  },
+};

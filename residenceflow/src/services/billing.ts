@@ -297,6 +297,8 @@ async function confirmPaymentTx(tx: Tx, ctx: AuthContext, paymentId: string, man
       organizationId: payment.organizationId,
       tenantId: payment.tenantId,
       status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] },
+      // Building-scoped staff can only allocate to invoices of their buildings.
+      ...(ctx.propertyIds === "ALL" ? {} : { lease: { unit: { propertyId: { in: ctx.propertyIds } } } }),
     },
     orderBy: { dueDate: "asc" },
   });
