@@ -80,17 +80,16 @@ Seed data: 1 organization, 2 buildings, 13 units (occupied, vacant, under mainte
 
 ## Deployment (online version)
 
-### One-click: Vercel + free Postgres
+### Vercel + free Postgres (about 5 minutes)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwouapit999%2Fwouapit999%2Ftree%2Fclaude%2Fsweet-rubin-6rj6yg&root-directory=residenceflow&project-name=residenceflow&env=CRON_SECRET&envDescription=Any%20long%20random%20text.%20Vercel%20Cron%20uses%20it%20to%20call%20the%20daily%20job.)
+1. Go to https://vercel.com/new, sign in with GitHub and click **Import** next to this repository. (Do not use "Clone template": it copies the code into a new repository and cannot read a branch.)
+2. On the configure screen set **Root Directory** to the folder that contains `package.json` (`residenceflow` when the app lives in a sub-folder; leave it empty when the app is at the repository root). Add an environment variable `CRON_SECRET` with any long random text. Click **Deploy**. The first build stops with *"no database URL found"*: expected, there is no database yet.
+3. In the new project open **Storage → Create Database → Postgres (Neon)**, keep the defaults, click **Connect**.
+4. **Deployments → ⋯ → Redeploy.** The build maps the database variables, creates all tables (`prisma migrate deploy`) and builds the app.
+5. Open `https://<your-project>.vercel.app/setup` and create your organization and first administrator. `/setup` works only while the database is empty.
+6. Done. The daily job (invoices, late fees, reminders, lease expiry, clean-up) runs automatically at 05:00 UTC through Vercel Cron.
 
-1. Click the button, sign in to Vercel with GitHub, keep the suggested project name and click **Create/Deploy**. The first build fails on purpose with *"no database URL found"* — that is expected until step 2.
-2. In the new project open **Storage → Create Database → Postgres (Neon)**, accept the defaults and click **Connect** (it attaches `POSTGRES_*`/`DATABASE_URL` variables automatically).
-3. Open **Deployments → ⋯ → Redeploy**. The build maps the database variables, creates all tables (`prisma migrate deploy`) and builds the app.
-4. Open `https://<your-project>.vercel.app/setup` and create your organization and first administrator. `/setup` works only while the database is empty.
-5. Done. The daily job (invoices, late fees, reminders, lease expiry, clean-up) runs automatically at 05:00 UTC through Vercel Cron.
-
-Manual import works the same way: **Add New → Project → Import** the repository, set **Root Directory** to `residenceflow`, add the `CRON_SECRET` variable, attach a Postgres store, deploy.
+If the code is on a branch other than `main`, either merge it first or set **Settings → Git → Production Branch** to that branch before step 4.
 
 Optional variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` for email; `NEXT_PUBLIC_DEMO_MODE=true` for a demo site (never with real data). Full list in `.env.example`.
 
