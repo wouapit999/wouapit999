@@ -1,8 +1,9 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { notifyUsers } from "@/lib/notify/notify";
+import { deliverPendingNotifications, notifyUsers } from "@/lib/notify/notify";
 import { assessOverdueAndLateFees, generateDueInvoices, sendDueReminders, todayUtc } from "./billing";
+import { processRecurringExpenses } from "./expenses";
 
 const DAY = 86_400_000;
 
@@ -49,6 +50,7 @@ export async function dailyJob(today = todayUtc()) {
     const invoices = await generateDueInvoices(org.id, today);
     const fees = await assessOverdueAndLateFees(org.id, today);
     const reminders = await sendDueReminders(org.id, today);
+    const recurringExpenses = await processRecurringExpenses(org.id, today);
 
     // Lease expiry reminders (30 days) and automatic EXPIRED status after the end date.
     const soon = await db.lease.findMany({
@@ -88,8 +90,10 @@ export async function dailyJob(today = todayUtc()) {
     const retention = org.settings?.visitorRetentionDays ?? 180;
     const purged = await db.visitorLog.deleteMany({ where: { organizationId: org.id, createdAt: { lt: new Date(Date.now() - retention * DAY) } } });
 
-    summary[org.slug] = { invoices, ...fees, reminders, leaseExpiryNotices: soon.length, leasesExpired: expired.length, docsExpiring: docs.length, visitorsPurged: purged.count };
+    summary[org.slug] = { invoices, ...fees, reminders, recurringExpenses, leaseExpiryNotices: soon.length, leasesExpired: expired.length, docsExpiring: docs.length, visitorsPurged: purged.count };
   }
+
+  summary.emailDeliveries = await deliverPendingNotifications();
 
   // Global cleanup: expired tokens and sessions, old login attempts.
   const tokens = await db.passwordResetToken.deleteMany({ where: { expiresAt: { lt: new Date(Date.now() - 7 * DAY) } } });

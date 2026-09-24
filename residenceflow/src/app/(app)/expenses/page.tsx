@@ -8,7 +8,7 @@ import { formatDay, formatMoney } from "@/lib/format";
 import { InlineAction } from "@/components/forms";
 import { Badge, EmptyState, FilterBar, Input, LinkButton, PageHeader, Pagination, Select, Stat, Table, Td, Th, Tr, parsePage, str } from "@/components/ui";
 import { approveExpenseAction, markExpensePaidAction, rejectExpenseAction } from "./actions";
-import { EXPENSE_CATEGORIES, EXPENSE_STATUSES, expenseDocPrefix } from "./constants";
+import { EXPENSE_CATEGORIES, EXPENSE_STATUSES, docBelongsTo, expenseDocLabel, expenseDocsWhere } from "./constants";
 import { expenseMessages } from "./messages";
 
 export const metadata = { title: "Expenses" };
@@ -43,7 +43,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      include: { property: { select: { name: true } }, unit: { select: { number: true } }, vendor: { select: { id: true, name: true } }, workOrder: { select: { id: true, number: true } } },
+      include: { property: { select: { name: true } }, unit: { select: { number: true } }, vendor: { select: { id: true, name: true } }, workOrder: { select: { id: true, number: true } }, purchaseOrder: { select: { id: true, number: true } } },
     }),
     db.expense.groupBy({ by: ["status"], where: base, _sum: { amount: true } }),
     db.property.findMany({ where: propertyWhere(ctx), orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -52,9 +52,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const ids = rows.map((r) => r.id);
   const [creators, docs] = await Promise.all([
     db.user.findMany({ where: { organizationId: ctx.organizationId, id: { in: rows.map((r) => r.createdById).filter((x): x is string => !!x) } }, select: { id: true, name: true } }),
-    ids.length
-      ? db.document.findMany({ where: { organizationId: ctx.organizationId, category: "OTHER", OR: ids.map((id) => ({ name: { startsWith: expenseDocPrefix(id) } })) }, select: { id: true, name: true } })
-      : [],
+    ids.length ? db.document.findMany({ where: expenseDocsWhere(ctx.organizationId, ids), select: { id: true, name: true, expenseId: true } }) : [],
   ]);
   const fmt = { locale, currency: settings?.currency ?? "XAF" };
   const prefs = { dateFormat: settings?.dateFormat };
@@ -104,15 +102,22 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {rows.map((e) => {
-              const attachments = docs.filter((d) => d.name.startsWith(expenseDocPrefix(e.id)));
+              const attachments = docs.filter((d) => docBelongsTo(e.id, d));
               return (
                 <Tr key={e.id}>
                   <Td className="whitespace-nowrap">{formatDay(e.expenseDate, prefs)}</Td>
                   <Td>
-                    <span className="font-medium">{e.description}</span>
+                    <Link className="font-medium text-[var(--brand)] hover:underline" href={`/expenses/${e.id}`}>{e.description}</Link>
                     <div className="text-xs text-slate-500">
                       {t(`exp.cat.${e.category}`)}
+                      {e.recurrence !== "NONE" && ` · ${t(`exp.rec.${e.recurrence}`)}`}
                       {e.billReference && ` · ${e.billReference}`}
+                      {e.purchaseOrder && (
+                        <>
+                          {" · "}
+                          <Link className="text-[var(--brand)] hover:underline" href={`/purchase-orders/${e.purchaseOrder.id}`}>{e.purchaseOrder.number}</Link>
+                        </>
+                      )}
                       {e.workOrder && (
                         <>
                           {" · "}
@@ -123,7 +128,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
                       {t("exp.createdBy")}: {creators.find((c) => c.id === e.createdById)?.name ?? "—"}
                     </div>
                     {attachments.map((a) => (
-                      <a key={a.id} className="block text-xs text-[var(--brand)] hover:underline" href={`/api/documents/${a.id}`}>📎 {a.name.slice(expenseDocPrefix(e.id).length)}</a>
+                      <a key={a.id} className="block text-xs text-[var(--brand)] hover:underline" href={`/api/documents/${a.id}`}>📎 {expenseDocLabel(e.id, a.name)}</a>
                     ))}
                   </Td>
                   <Td>{e.property?.name ?? t("exp.orgWide")}{e.unit ? ` · ${e.unit.number}` : ""}</Td>

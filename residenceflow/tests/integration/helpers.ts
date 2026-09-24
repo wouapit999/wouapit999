@@ -16,6 +16,7 @@ export function ctxFor(organizationId: string, userId: string, roleKey = "org_ad
     propertyIds,
     tenantId: null,
     vendorId: null,
+    supportAccess: null,
   };
 }
 
