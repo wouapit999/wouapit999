@@ -80,7 +80,7 @@ export async function AppShell({ ctx, sections, children }: { ctx: AuthContext; 
             </form>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/notifications" className="relative rounded-md px-2 py-1 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`${t("common.notifications")} (${unread})`}>
+            <Link href={isStaff ? "/notifications" : "/portal/notifications"} className="relative rounded-md px-2 py-1 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`${t("common.notifications")} (${unread})`}>
               🔔{unread > 0 && <span className="ml-1 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold text-white">{unread}</span>}
             </Link>
             <LocaleSwitcher locale={locale} />
@@ -96,7 +96,7 @@ export async function AppShell({ ctx, sections, children }: { ctx: AuthContext; 
               </summary>
               <div className="absolute right-0 top-9 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
                 <div className="px-2 py-1 text-xs text-slate-500">{ctx.user.email}</div>
-                <Link href="/account" className="block rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">{t("common.profile")}</Link>
+                <Link href={isStaff ? "/account" : "/portal/profile"} className="block rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800">{t("common.profile")}</Link>
                 <form action={logoutAction}>
                   <button className="w-full rounded px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800">{t("common.signOut")}</button>
                 </form>
