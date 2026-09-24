@@ -20,14 +20,27 @@ Secure, responsive, multi-building **apartment & rental property management** we
 
 Requirements: Node 20+ and PostgreSQL 14+ (or `docker compose up db`).
 
+Run each command on its own line (no trailing comments — Windows Command Prompt would pass them to the command).
+
 ```bash
 cd residenceflow
-cp .env.example .env            # set DATABASE_URL / DIRECT_URL / CRON_SECRET
-npm install
-npx prisma migrate deploy        # or: npm run db:migrate:dev
-npm run db:seed                  # development demo data (refuses to run in production)
-npm run dev                      # http://localhost:3000
+cp .env.example .env
 ```
+
+Open `.env` and set `DATABASE_URL` and `DIRECT_URL` to your PostgreSQL database, and give `AUTH_SECRET` and `CRON_SECRET` random values. On Windows, copy the file instead: `copy .env.example .env`.
+
+```bash
+npm install
+npx prisma migrate deploy
+npm run db:seed
+npm run dev
+```
+
+- `npm run db:seed` loads the development demo data and accounts (it refuses to run in production).
+- `npm run dev` serves the app at http://localhost:3000.
+- No PostgreSQL installed? Start one with `docker compose up -d db` and keep the default `DATABASE_URL` from `.env.example`.
+
+Windows note: use Command Prompt or PowerShell from the `residenceflow` folder; the commands above work unchanged.
 
 ### Development demo accounts
 
