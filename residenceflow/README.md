@@ -75,3 +75,31 @@ Seed data: 1 organization, 2 buildings, 13 units (occupied, vacant, under mainte
 - Money uses fixed-precision decimals; payment posting, allocation and reversal are transactional with row locks; issued invoices and receipts are immutable; financial records are never hard-deleted.
 - Recurring invoicing and late fees are idempotent; the daily job is protected against concurrent execution.
 - Role changes, password resets, logins, financial actions and sensitive document access are audited (append-only, secrets redacted).
+
+## End-to-end tests
+
+The Playwright suite in `tests/e2e/` drives the real UI (login form, server actions, redirects) against a
+running build and the seeded demo database. It never edits application code and only creates new records
+with unique suffixes, so it can be re-run against the same database.
+
+```bash
+# 1. Build and start the app against a seeded database (see "Getting started")
+npm run build && PORT=3100 npm start
+
+# 2. In another terminal
+npm run test:e2e                       # all specs, 1 worker, 1 retry, list reporter
+npx playwright test tests/e2e/smoke.spec.ts
+npx playwright test --headed           # watch it run
+npx playwright show-trace test-results/<run>/trace.zip   # traces are recorded on the first retry
+```
+
+- `E2E_BASE_URL` overrides the target (default `http://localhost:3100`).
+- `PW_CHROMIUM` points at a Chromium binary when Playwright's bundled browser is not installed
+  (the config falls back to `/opt/pw-browsers/chromium`). Never run `playwright install` in the shared
+  environment.
+- Specs: `01`-`14` follow the scenario script in `docs/ROUTES.md` (branding, building → unit → tenant →
+  lease → invoice → payment → public receipt check, tenant portal balance, maintenance workflow, concierge
+  desk, custom role with re-authentication, password reset link, authorization boundaries).
+  `smoke.spec.ts` signs in as all 12 demo accounts and opens their main pages; `screenshots.spec.ts`
+  regenerates `docs/screenshots/` (indexed in `docs/SCREENSHOTS.md`) at 1280×800 and 390×844.
+- Text assertions accept English and French (the UI language depends on the account's locale).

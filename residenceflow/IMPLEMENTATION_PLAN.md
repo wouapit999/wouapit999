@@ -10,7 +10,7 @@ Status legend: [x] done · [~] partial / integration point only · [ ] not start
 - [x] Application shell: responsive sidebar, top bar, search, notifications, EN/FR, light/dark
 - [x] Admin: general, branding, users, roles, security, financial, notifications, integrations, numbering, audit logs, system status
 - [x] Properties and units
-- [x] Audit foundation (append-only, sanitised)
+- [x] Audit foundation (append-only, sanitised); audited platform support access
 **Dependencies:** none. **Risk:** permission gaps → mitigated by helpers + tests.
 
 ## Phase 2 — Tenancy and rent
@@ -33,19 +33,19 @@ Status legend: [x] done · [~] partial / integration point only · [ ] not start
 ## Phase 4 — Finance and reporting
 - [x] Arrears aging, collection notes, promises to pay
 - [x] Security deposits (receipts, deductions, refunds, approvals)
-- [x] Expenses with approvals, vendors
-- [~] Reconciliation — provider references are matched by the webhook service; a bank-statement import screen is not built yet
+- [x] Expenses with approvals, vendors, purchase orders, recurring expenses
+- [x] Reconciliation — webhook reference matching + bank/mobile-money statement import with automatic and manual matching
 - [x] Operational & financial reports with CSV export and print-to-PDF
-- [~] Utilities & meter readings — data model present; UI not built (optional module)
-- [~] Rental applications & screening — optional module; not built (future)
-- [~] Payment plans with instalments — promise-to-pay notes only
+- [x] Utilities & meter readings (optional module, feature flag): meters, readings, photo evidence, CSV import, billing to tenant
+- [x] Rental applications & screening (optional module, feature flag) with human-only decisions and conversion to tenant + lease
+- [x] Payment plans with instalments, tracked against confirmed payments; arrears notice letters (reminder / formal / final)
 
 ## Phase 5 — Integrations and hardening
 - [~] Payment provider adapter interface + verified, idempotent webhook (generic HMAC adapter); no live mobile-money adapter
-- [~] SMS/WhatsApp — notification hook only; email via SMTP
+- [~] Email channel with queued delivery and retry (daily job); SMS/WhatsApp — adapter hook only
 - [x] MFA
 - [x] Security review items in SECURITY.md (open items listed there)
 - [~] Monitoring — structured JSON logs, health endpoint, JobRun history; plug in Sentry/OTel at `src/lib/action.ts` & route handlers
 - [~] Backup/restore drill — performed on the seeded development database (docs/RUNBOOK.md, "Restore drill log"); repeat on a production snapshot before go-live
-- [ ] Playwright end-to-end suite (route checklist in docs/ROUTES.md is the manual script)
+- [x] Playwright end-to-end suite: the 14 spec scenarios + smoke for all 12 roles + screenshots (docs/SCREENSHOTS.md)
 - [ ] Production-readiness review, penetration test
