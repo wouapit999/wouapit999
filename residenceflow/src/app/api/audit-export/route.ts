@@ -5,6 +5,7 @@ import { hasPermission } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { getOrgSettings } from "@/lib/settings";
 import { auditWhere, type AuditFilters } from "@/services/admin";
+import { SUPPORT_BLOCKED_MESSAGE } from "@/services/support-access";
 
 const MAX_ROWS = 10_000;
 
@@ -21,6 +22,8 @@ export async function GET(req: Request) {
   if (ctx.user.mustChangePassword || !hasPermission(ctx.permissions, ["audit.view", "audit.export"]) || !ctx.organizationId) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  // Exports are never available while acting under platform support access.
+  if (ctx.supportAccess) return NextResponse.json({ error: SUPPORT_BLOCKED_MESSAGE }, { status: 403 });
   const q = new URL(req.url).searchParams;
   const filters: AuditFilters = {
     actor: q.get("actor") ?? undefined,

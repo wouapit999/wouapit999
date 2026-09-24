@@ -1,15 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { authorize } from "@/lib/auth/context";
 import { issueResetToken } from "@/lib/auth/tokens";
+import { verifyPassword } from "@/lib/auth/password";
+import { requestMeta } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/notify/email";
 import { formToObject, runAction, type ActionResult } from "@/lib/action";
 import { BusinessError } from "@/lib/errors";
 import { createOrganization } from "@/services/org";
+import { auditActor } from "@/services/admin";
+import { requireRecentReauth } from "@/services/reauth";
+import { endSupportAccess, startSupportAccess, SUPPORT_DURATIONS } from "@/services/support-access";
 
 const createSchema = z.object({
   name: z.string().trim().min(2).max(200),
@@ -71,4 +77,110 @@ export async function setOrganizationStatusAction(_p: ActionResult | null, fd: F
     });
     revalidatePath("/platform");
   }).then((r) => (r.ok ? { ...r, message: "plat.saved" } : r));
+}
+
+// ───────────────────────────── Re-authentication ─────────────────────────────
+
+const REAUTH_MAX_FAILURES = 5;
+const REAUTH_WINDOW_MIN = 15;
+
+/** Password confirmation for sensitive platform actions (same rules as the admin console). */
+export async function platformReauthAction(_p: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const ctx = await authorize("platform.organizations.manage");
+    const password = z.string().min(1).max(200).parse(fd.get("password"));
+    const since = new Date(Date.now() - REAUTH_WINDOW_MIN * 60_000);
+    const failures = await db.loginAttempt.count({ where: { userId: ctx.user.id, reason: "reauth_failed", createdAt: { gte: since } } });
+    if (failures >= REAUTH_MAX_FAILURES) throw new BusinessError("auth.locked");
+    const user = await db.user.findUniqueOrThrow({ where: { id: ctx.user.id }, select: { passwordHash: true, email: true } });
+    const meta = await requestMeta();
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      await db.loginAttempt.create({ data: { identifier: user.email, ip: meta.ip, userAgent: meta.userAgent, userId: ctx.user.id, success: false, reason: "reauth_failed" } });
+      await audit(auditActor(ctx), { action: "auth.reauth", module: "auth", entityType: "User", entityId: ctx.user.id, result: "FAILURE" });
+      throw new BusinessError("password.currentWrong");
+    }
+    await db.session.update({ where: { id: ctx.sessionId }, data: { reauthAt: new Date() } });
+    await audit(auditActor(ctx), { action: "auth.reauth", module: "auth", entityType: "User", entityId: ctx.user.id });
+    revalidatePath("/platform");
+  }).then((r) => (r.ok ? { ...r, message: "sup.reauthOk" } : r));
+}
+
+// ───────────────────────────── Support access ─────────────────────────────
+
+const startSupportSchema = z.object({
+  organizationId: z.string().uuid(),
+  targetUserId: z.string().uuid(),
+  reason: z.string().trim().min(10).max(1000),
+  ticketRef: z.string().trim().max(100).default(""),
+  durationMinutes: z.coerce.number().refine((n): n is (typeof SUPPORT_DURATIONS)[number] => (SUPPORT_DURATIONS as readonly number[]).includes(n)),
+});
+
+/** Opens a controlled support session as an organization administrator, then lands on that organization's dashboard. */
+export async function startSupportAccessAction(_p: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const r = await runAction(async () => {
+    const ctx = await authorize("platform.organizations.manage");
+    const d = startSupportSchema.parse(formToObject(fd));
+    await startSupportAccess(ctx, d);
+  });
+  if (!r.ok) return r;
+  redirect("/dashboard");
+}
+
+const endSupportSchema = z.object({ id: z.string().uuid() });
+
+/** Ends an active support-access grant from the platform console (revokes its session immediately). */
+export async function endSupportAccessNowAction(_p: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const ctx = await authorize("platform.organizations.manage");
+    const d = endSupportSchema.parse(formToObject(fd));
+    await endSupportAccess(auditActor(ctx), d.id, "platform");
+    revalidatePath("/platform");
+  }).then((r) => (r.ok ? { ...r, message: "sup.ended" } : r));
+}
+
+// ───────────────────────────── Administrator reset ─────────────────────────────
+
+const RESET_MINUTES = 30;
+const ACTIVATION_MINUTES = 72 * 60;
+const resetAdminSchema = z.object({ organizationId: z.string().uuid(), userId: z.string().uuid() });
+
+/**
+ * Issues a single-use password reset (or activation) link for an organization administrator.
+ * The platform never sets or sees a password; the link is shown once and emailed when possible.
+ */
+export async function resetOrganizationAdminAction(_p: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const ctx = await authorize("platform.organizations.manage");
+    await requireRecentReauth(ctx);
+    const d = resetAdminSchema.parse(formToObject(fd));
+    const user = await db.user.findFirst({
+      where: { id: d.userId, organizationId: d.organizationId, status: { in: ["ACTIVE", "INVITED"] }, roles: { some: { role: { key: "org_admin" } } } },
+      select: { id: true, email: true, name: true, status: true, organization: { select: { name: true } } },
+    });
+    if (!user) throw new BusinessError("sup.targetInvalid");
+    const purpose = user.status === "INVITED" ? "ACTIVATION" : "RESET";
+    const minutes = purpose === "ACTIVATION" ? ACTIVATION_MINUTES : RESET_MINUTES;
+    const link = await issueResetToken(user.id, purpose, minutes);
+    let emailSent = false;
+    try {
+      emailSent = (await sendEmail({
+        to: user.email,
+        subject: purpose === "ACTIVATION" ? `Your ${user.organization?.name ?? ""} administrator account` : "Password reset",
+        text: `Use this single-use link within ${Math.round(minutes / 60)} h to ${purpose === "ACTIVATION" ? "activate your account" : "reset your password"}:\n${link}\n\nUtilisez ce lien à usage unique dans les ${Math.round(minutes / 60)} h pour ${purpose === "ACTIVATION" ? "activer votre compte" : "réinitialiser votre mot de passe"} :\n${link}`,
+      })).sent;
+    } catch {
+      emailSent = false;
+    }
+    const entry = {
+      action: purpose === "ACTIVATION" ? "user.activation_link_issued" : "platform.admin_password_reset_initiated",
+      module: "platform",
+      entityType: "User",
+      entityId: user.id,
+      metadata: { emailSent, expiresInMinutes: minutes, organizationId: d.organizationId },
+    };
+    await audit(ctx, entry, db, null);
+    await audit(ctx, entry, db, d.organizationId);
+    revalidatePath("/platform");
+    return { link, emailSent };
+  }).then((r) => (r.ok ? { ...r, message: "sup.resetIssued" } : r));
 }

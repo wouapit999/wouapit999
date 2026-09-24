@@ -47,6 +47,7 @@ export default async function TenantArrearsPage({ params }: { params: Promise<{ 
         actions={
           <>
             {can(ctx, "invoice.view") && <LinkButton variant="secondary" href={`/invoices/statement/${tenant.id}`}>{t("arr.statement")}</LinkButton>}
+            {can(ctx, "arrears.manage") && <LinkButton variant="secondary" href={`/arrears/${tenant.id}/notice`}>{t("arr.notice")}</LinkButton>}
             {can(ctx, "payment.record") && <LinkButton href={`/payments/new?tenantId=${tenant.id}`}>{t("arr.recordPayment")}</LinkButton>}
           </>
         }

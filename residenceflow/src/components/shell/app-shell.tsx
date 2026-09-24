@@ -6,6 +6,8 @@ import type { AuthContext } from "@/lib/auth/context";
 import { getOrgSettings } from "@/lib/settings";
 import { hasAnyPermission } from "@/lib/permissions";
 import { logoutAction, setThemeAction } from "@/lib/auth/actions";
+import { endSupportAccessAction } from "@/lib/auth/support-actions";
+import { formatInTimeZone } from "date-fns-tz";
 import { getT } from "@/i18n";
 import { db } from "@/lib/db";
 import { LocaleSwitcher } from "./locale-switcher";
@@ -104,6 +106,16 @@ export async function AppShell({ ctx, sections, children }: { ctx: AuthContext; 
             </details>
           </div>
         </header>
+        {ctx.supportAccess && (
+          <div role="status" className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+            <span>
+              <strong>{t("common.supportSession")}</strong> — {t("common.supportExpires", { time: formatInTimeZone(ctx.supportAccess.expiresAt, settings?.timezone ?? "UTC", "HH:mm") })}
+            </span>
+            <form action={endSupportAccessAction}>
+              <button className="rounded-md border border-amber-400 bg-white px-2 py-1 text-xs font-medium hover:bg-amber-100 dark:bg-slate-900 dark:hover:bg-amber-900">{t("common.supportEnd")}</button>
+            </form>
+          </div>
+        )}
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">{children}</main>
         {settings?.footerText && <footer className="no-print border-t border-slate-200 px-6 py-3 text-xs text-slate-500 dark:border-slate-800">{settings.footerText}</footer>}
       </div>

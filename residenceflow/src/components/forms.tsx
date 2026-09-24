@@ -7,10 +7,10 @@ import { buttonClass, cn } from "./ui";
 
 type Action = (prev: ActionResult<unknown> | null, fd: FormData) => Promise<ActionResult<unknown>>;
 
-export function SubmitButton({ children, variant = "primary", className, pendingLabel }: { children: ReactNode; variant?: "primary" | "secondary" | "danger" | "ghost"; className?: string; pendingLabel?: string }) {
+export function SubmitButton({ children, variant = "primary", className, pendingLabel, disabled }: { children: ReactNode; variant?: "primary" | "secondary" | "danger" | "ghost"; className?: string; pendingLabel?: string; disabled?: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} aria-busy={pending} className={buttonClass(variant, className)}>
+    <button type="submit" disabled={pending || disabled} aria-busy={pending} className={buttonClass(variant, className)}>
       {pending ? pendingLabel ?? "…" : children}
     </button>
   );

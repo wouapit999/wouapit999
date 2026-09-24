@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { authorize } from "@/lib/auth/context";
 import { audit } from "@/lib/audit";
-import { ForbiddenError } from "@/lib/errors";
+import { BusinessError, ForbiddenError } from "@/lib/errors";
 import { getT } from "@/i18n";
 import { canViewReport, getReport, iso, parseReportParams, toCsv } from "@/services/reports";
 import { reportMessages } from "@/app/(app)/reports/i18n";
+import { assertNotSupportAccess } from "@/services/support-access";
 
 /**
  * CSV export of a report. Requires report.export plus the report's own view permission;
@@ -18,7 +19,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   try {
     ctx = await authorize("report.export");
     if (!canViewReport(ctx, def)) throw new ForbiddenError();
+    assertNotSupportAccess(ctx); // exports are blocked while acting under platform support access
   } catch (e) {
+    if (e instanceof BusinessError) return NextResponse.json({ error: e.message }, { status: 403 });
     if (e instanceof ForbiddenError) {
       const status = e.message === "unauthenticated" ? 401 : 403;
       return NextResponse.json({ error: status === 401 ? "unauthenticated" : "forbidden" }, { status });
