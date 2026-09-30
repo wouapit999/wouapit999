@@ -30,7 +30,7 @@ const id = z.string().uuid();
 
 async function emailLink(organizationId: string, to: string, kind: "activation" | "reset", link: string, hours: number) {
   const s = await getOrgSettings(organizationId);
-  const app = s?.appName ?? "ResidenceFlow";
+  const app = s?.appName ?? "GestPro";
   const fr = s?.defaultLanguage === "fr";
   const subject = kind === "activation"
     ? (fr ? `Activez votre compte ${app}` : `Activate your ${app} account`)

@@ -35,7 +35,7 @@ async function sendActivationEmail(
   msg: Msg,
 ) {
   const settings = await getOrgSettings(ctx.organizationId);
-  const appName = settings?.appName ?? "ResidenceFlow";
+  const appName = settings?.appName ?? "GestPro";
   const company = settings?.companyName || appName;
   const { sent } = await sendEmail({
     to: to.email,

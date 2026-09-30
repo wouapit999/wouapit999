@@ -1,4 +1,4 @@
-// ResidenceFlow data model.
+// GestPro data model.
 // Every business record carries organizationId (directly or through a parent)
 // and every query must be scoped on the server (see src/lib/auth/context.ts).
 // Money is stored as Decimal(14,2) — never floating point.
@@ -87,7 +87,7 @@ model OrganizationSettings {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   // Identity & branding
-  appName        String  @default("ResidenceFlow")
+  appName        String  @default("GestPro")
   companyName    String  @default("")
   shortName      String  @default("RF")
   logoUrl        String? // data: URL or storage URL (validated on upload)

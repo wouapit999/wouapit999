@@ -1,6 +1,6 @@
 # Architecture
 
-ResidenceFlow is a single **Next.js 15 (App Router) full-stack TypeScript** application backed by **PostgreSQL via Prisma**. Pages are React Server Components; mutations are **server actions**; integrations use **route handlers**. It deploys as-is to Vercel (serverless) or as a Docker container.
+GestPro is a single **Next.js 15 (App Router) full-stack TypeScript** application backed by **PostgreSQL via Prisma**. Pages are React Server Components; mutations are **server actions**; integrations use **route handlers**. It deploys as-is to Vercel (serverless) or as a Docker container.
 
 ```
 src/

@@ -9,7 +9,7 @@ import { safeBrandColor } from "@/lib/branding";
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await loadBranding();
   return {
-    title: { default: settings?.appName ?? "ResidenceFlow", template: `%s · ${settings?.appName ?? "ResidenceFlow"}` },
+    title: { default: settings?.appName ?? "GestPro", template: `%s · ${settings?.appName ?? "GestPro"}` },
     description: "Apartment and rental property management",
     icons: settings?.iconUrl ? [{ url: settings.iconUrl }] : undefined,
   };

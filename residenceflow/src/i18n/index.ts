@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { en, type MessageKey } from "./en";
 import { fr } from "./fr";
 import { getContext } from "@/lib/auth/context";
@@ -22,6 +22,10 @@ export async function getLocale(): Promise<Locale> {
   if (c === "en" || c === "fr") return c;
   const ctx = await getContext().catch(() => null);
   if (ctx?.user.locale === "en" || ctx?.user.locale === "fr") return ctx.user.locale;
+  const accept = (await headers()).get("accept-language") ?? "";
+  const first = accept.split(",")[0]?.trim().toLowerCase() ?? "";
+  if (first.startsWith("en")) return "en";
+  if (first.startsWith("fr")) return "fr";
   return "fr";
 }
 

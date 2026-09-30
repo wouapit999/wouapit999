@@ -32,7 +32,7 @@ async function main() {
   }
   const hash = await bcrypt.hash(DEMO_PASSWORD, 12);
   const platformRole = await ensurePlatformRole(db);
-  const org = await createOrganization(db, { name: "Résidences du Wouri SARL", slug: "wouri", appName: "ResidenceFlow" });
+  const org = await createOrganization(db, { name: "Résidences du Wouri SARL", slug: "wouri", appName: "GestPro" });
   await db.organizationSettings.update({
     where: { organizationId: org.id },
     data: {

@@ -134,7 +134,7 @@ export async function emailInvoiceAction(_p: ActionResult | null, fd: FormData):
     const link = `${appBaseUrl()}/portal/billing/${inv.id}`;
     await sendEmail({
       to: tenant.email,
-      subject: fr ? `Facture ${inv.number} — ${settings?.appName ?? "ResidenceFlow"}` : `Invoice ${inv.number} — ${settings?.appName ?? "ResidenceFlow"}`,
+      subject: fr ? `Facture ${inv.number} — ${settings?.appName ?? "GestPro"}` : `Invoice ${inv.number} — ${settings?.appName ?? "GestPro"}`,
       text: fr
         ? `Bonjour ${tenant.legalName},\n\nVotre facture ${inv.number} d'un montant de ${amount} est due le ${inv.dueDate.toISOString().slice(0, 10)}.\nConsultez-la et téléchargez-la ici : ${link}\n\n${settings?.companyName ?? ""}`
         : `Hello ${tenant.legalName},\n\nYour invoice ${inv.number} for ${amount} is due on ${inv.dueDate.toISOString().slice(0, 10)}.\nView and download it here: ${link}\n\n${settings?.companyName ?? ""}`,

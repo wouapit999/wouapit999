@@ -22,7 +22,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
             )}
             {s?.darkLogoUrl && <img src={s.darkLogoUrl} alt="" className="hidden h-10 w-auto dark:block" />}
             <div>
-              <div className="text-lg font-semibold">{s?.appName ?? "ResidenceFlow"}</div>
+              <div className="text-lg font-semibold">{s?.appName ?? "GestPro"}</div>
               <div className="text-xs text-slate-500">{s?.companyName || t("app.tagline")}</div>
             </div>
           </div>

@@ -56,7 +56,7 @@ export async function AppShell({ ctx, sections, children }: { ctx: AuthContext; 
           {(settings?.shortName ?? "RF").slice(0, 3)}
         </span>
       )}
-      <span className="font-semibold">{settings?.appName ?? "ResidenceFlow"}</span>
+      <span className="font-semibold">{settings?.appName ?? "GestPro"}</span>
     </Link>
   );
 

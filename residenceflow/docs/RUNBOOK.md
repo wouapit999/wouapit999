@@ -6,7 +6,7 @@ See `.env.example`. Required in production: `DATABASE_URL`, `DIRECT_URL`, `CRON_
 
 ## Deploy to Vercel
 
-1. Import the GitHub repository in Vercel. Set **Root Directory = `residenceflow`**.
+1. Import the GitHub repository `wouapit999/residenceflow` in Vercel (Root Directory stays empty).
 2. Add a PostgreSQL database: **Storage → Create Database → Postgres (Neon)** and connect it to the project. The variables it creates (`POSTGRES_PRISMA_URL`, `POSTGRES_URL_NON_POOLING`, `DATABASE_URL`, …) are mapped automatically by `scripts/vercel-build.mjs`; you may also set `DATABASE_URL`/`DIRECT_URL` yourself for any other Postgres.
 3. Set `CRON_SECRET` (random) and optionally SMTP variables.
 4. Deploy. The build runs `npm run vercel-build` = `scripts/vercel-build.mjs` (resolve database URL → prisma generate → prisma migrate deploy → next build).

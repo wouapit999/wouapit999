@@ -220,7 +220,7 @@ export function DescriptionList({ items }: { items: { label: string; value: Reac
 /** Server-side pagination links preserving other query params. */
 export function Pagination({ page, pageSize, total, basePath, params }: { page: number; pageSize: number; total: number; basePath: string; params?: Record<string, string | undefined> }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
-  if (pages <= 1) return <p className="mt-3 text-xs text-slate-500">{total} record(s)</p>;
+  if (pages <= 1) return <p className="mt-3 text-xs text-slate-500">{total}</p>;
   const href = (p: number) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params ?? {})) if (v) q.set(k, v);
@@ -229,7 +229,7 @@ export function Pagination({ page, pageSize, total, basePath, params }: { page: 
   };
   return (
     <div className="mt-3 flex items-center justify-between text-sm text-slate-600 dark:text-slate-300">
-      <span>{total} record(s) · page {page} / {pages}</span>
+      <span>{total} · {page}/{pages}</span>
       <div className="flex gap-2">
         {page > 1 && <Link className={buttonClass("secondary")} href={href(page - 1)}>‹</Link>}
         {page < pages && <Link className={buttonClass("secondary")} href={href(page + 1)}>›</Link>}

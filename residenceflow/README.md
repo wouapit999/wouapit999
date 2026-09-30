@@ -1,4 +1,4 @@
-# ResidenceFlow
+# GestPro
 
 Secure, responsive, multi-building **apartment & rental property management** web application — buildings, units, tenants, leases, automated rent schedules, invoices, payments & receipts, arrears, deposits, maintenance work orders, concierge desk, documents, communications, reports, and a configurable administration panel. English & French, XAF / Africa/Douala defaults, fully configurable.
 
@@ -23,6 +23,7 @@ Requirements: Node 20+ and PostgreSQL 14+ (or `docker compose up db`).
 Run each command on its own line (no trailing comments — Windows Command Prompt would pass them to the command).
 
 ```bash
+git clone https://github.com/wouapit999/residenceflow.git
 cd residenceflow
 cp .env.example .env
 ```
@@ -83,13 +84,13 @@ Seed data: 1 organization, 2 buildings, 13 units (occupied, vacant, under mainte
 ### Vercel + free Postgres (about 5 minutes)
 
 1. Go to https://vercel.com/new, sign in with GitHub and click **Import** next to this repository. (Do not use "Clone template": it copies the code into a new repository and cannot read a branch.)
-2. On the configure screen set **Root Directory** to the folder that contains `package.json` (`residenceflow` when the app lives in a sub-folder; leave it empty when the app is at the repository root). Add an environment variable `CRON_SECRET` with any long random text. Click **Deploy**. The first build stops with *"no database URL found"*: expected, there is no database yet.
+2. On the configure screen leave **Root Directory** empty (the app is at the repository root). Add an environment variable `CRON_SECRET` with any long random text. Click **Deploy**. The first build stops with *"no database URL found"*: expected, there is no database yet.
 3. In the new project open **Storage → Create Database → Postgres (Neon)**, keep the defaults, click **Connect**.
 4. **Deployments → ⋯ → Redeploy.** The build maps the database variables, creates all tables (`prisma migrate deploy`) and builds the app.
 5. Open `https://<your-project>.vercel.app/setup` and create your organization and first administrator. `/setup` works only while the database is empty.
 6. Done. The daily job (invoices, late fees, reminders, lease expiry, clean-up) runs automatically at 05:00 UTC through Vercel Cron.
 
-If the code is on a branch other than `main`, either merge it first or set **Settings → Git → Production Branch** to that branch before step 4.
+
 
 Optional variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` for email; `NEXT_PUBLIC_DEMO_MODE=true` for a demo site (never with real data). Full list in `.env.example`.
 

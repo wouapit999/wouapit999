@@ -71,7 +71,7 @@ export async function startMfaEnrollmentAction(_p: ActionResult | null, _fd: For
     const s = ctx.organizationId ? await getOrgSettings(ctx.organizationId) : null;
     await audit(auditActor(ctx), { action: "account.mfa_enrollment_started", module: "account", entityType: "User", entityId: ctx.user.id });
     revalidatePath("/account");
-    return { secret, uri: otpauthUrl(secret, user.email, s?.appName ?? "ResidenceFlow") };
+    return { secret, uri: otpauthUrl(secret, user.email, s?.appName ?? "GestPro") };
   }).then((r) => (r.ok ? { ...r, message: "acct.mfa.scan" } : r));
 }
 

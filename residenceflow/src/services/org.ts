@@ -24,7 +24,7 @@ export async function ensurePlatformRole(tx: Tx = db) {
 export async function createOrganization(tx: Tx, input: { name: string; slug: string; appName?: string }) {
   const org = await tx.organization.create({ data: { name: input.name, slug: input.slug } });
   await tx.organizationSettings.create({
-    data: { organizationId: org.id, companyName: input.name, appName: input.appName ?? "ResidenceFlow" },
+    data: { organizationId: org.id, companyName: input.name, appName: input.appName ?? "GestPro" },
   });
   await ensureSystemRoles(org.id, tx);
   for (const [key, def] of Object.entries(SEQUENCE_DEFAULTS)) {

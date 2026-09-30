@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { USERS, login, logout, uniq } from "./helpers";
 
-const ORIGINAL_APP_NAME = "ResidenceFlow";
+const ORIGINAL_APP_NAME = "GestPro";
 
 async function saveAppName(page: Page, name: string) {
   await page.goto("/admin/general");

@@ -18,8 +18,8 @@ export async function sendTestEmailAction(_p: ActionResult | null, _fd: FormData
     try {
       const r = await sendEmail({
         to: ctx.user.email,
-        subject: `${s?.appName ?? "ResidenceFlow"} — test email`,
-        text: `This is a test email sent from ${s?.appName ?? "ResidenceFlow"} at ${new Date().toISOString()}.\nIf you received it, outgoing email is working.`,
+        subject: `${s?.appName ?? "GestPro"} — test email`,
+        text: `This is a test email sent from ${s?.appName ?? "GestPro"} at ${new Date().toISOString()}.\nIf you received it, outgoing email is working.`,
         fromName: s?.emailSenderName || undefined,
         replyTo: s?.replyToEmail || undefined,
       });
