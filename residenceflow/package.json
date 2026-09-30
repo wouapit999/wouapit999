@@ -17,7 +17,9 @@
     "db:reset": "prisma migrate reset --force",
     "docs:permissions": "tsx scripts/gen-permissions.ts",
     "test:e2e": "playwright test",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "admin:reset": "tsx scripts/admin-reset.ts",
+    "db:wipe": "prisma migrate reset --force --skip-seed"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

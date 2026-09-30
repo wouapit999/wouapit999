@@ -66,3 +66,17 @@ Safe: every step is idempotent.
 | 2026-09-24 | seeded development DB (69 invoices, 6 payments, 5 265 500 XAF paid) | 338 KB | 0.4 s | 0.4 s | row counts and paid totals identical in source and restored DB; `prisma migrate status` reports up to date | PASS |
 
 Repeat the drill after every schema migration and at least quarterly on a production snapshot; add a row here each time.
+
+## Lost administrator access / start afresh
+
+**Reset one administrator (keeps all data).** From a trusted workstation, with the production connection strings:
+```bash
+DATABASE_URL="postgres://..." DIRECT_URL="postgres://..." npm run admin:reset -- admin@example.com --clear-mfa
+```
+Prints a one-time temporary password; the user must choose a new one at next login. Audited.
+
+**Wipe everything and run `/setup` again (destroys all data).**
+```bash
+DATABASE_URL="postgres://..." DIRECT_URL="postgres://..." npm run db:wipe
+```
+Then open `/setup` on the site. Alternative without a workstation: delete the database in Vercel → Storage, create a new one, connect it to the project and redeploy.
