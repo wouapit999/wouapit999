@@ -5,6 +5,7 @@ export const unitMessages: ModuleMessages = {
     "unit.title": "Units",
     "unit.subtitle": "Apartments, studios, shops and rooms across your buildings.",
     "unit.new": "New unit",
+    "unit.view3d": "View in 3D",
     "unit.edit": "Edit unit",
     "unit.building": "Building",
     "unit.block": "Block / wing",
@@ -79,6 +80,7 @@ export const unitMessages: ModuleMessages = {
   fr: {
     "unit.title": "Logements",
     "unit.subtitle": "Appartements, studios, boutiques et chambres de vos immeubles.",
+    "unit.view3d": "Voir en 3D",
     "unit.new": "Nouveau logement",
     "unit.edit": "Modifier le logement",
     "unit.building": "Immeuble",

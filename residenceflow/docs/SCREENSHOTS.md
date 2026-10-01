@@ -64,3 +64,10 @@ Each page is captured full-height at desktop (1280×800, `<role>-<page>.png`) an
 | Home | ![](screenshots/tenant-portal-home.png) | ![](screenshots/tenant-portal-home-mobile.png) |
 | Billing | ![](screenshots/tenant-portal-billing.png) | ![](screenshots/tenant-portal-billing-mobile.png) |
 | Maintenance requests | ![](screenshots/tenant-portal-maintenance.png) | ![](screenshots/tenant-portal-maintenance-mobile.png) |
+
+## 3D building view
+
+| Page | Desktop | Mobile |
+|---|---|---|
+| Building 3D view | ![](screenshots/admin-building-3d.png) | ![](screenshots/admin-building-3d-mobile.png) |
+| Unit selected (areas) | ![](screenshots/admin-building-3d-unit.png) | |

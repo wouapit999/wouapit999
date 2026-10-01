@@ -98,6 +98,10 @@ Optional variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMA
 
 `docker build -t residenceflow .` then `docker run -p 3000:3000 --env-file .env residenceflow` (runs migrations, then starts). Rollback, backups and the **restore procedure** are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
+## 3D building view
+
+Every building has a **3D view** (button on the building page, and "View in 3D" on each unit) generated from its own data: floors, blocks and units with their footprint (from the area) and live status colour. Rotate, zoom and pan; filter by floor or "explode" the floors; click a unit to see its areas (living room, kitchen, bedrooms, bathrooms, balcony — or shop/office floor) and open its page. No external assets: the model is computed in `src/domain/building-3d.ts` (unit-tested) and rendered client-side with Three.js (`src/components/three/`).
+
 ## Onboarding new clients (approval + 20-minute code)
 
 The login page has a **Create a new enterprise** button. A new client enters the company name, their name and email and clicks *Request access*. GestPro emails the request to `SUPPORT_EMAIL` (default `support@bouquet-innovation.net`) with the applicant's details and an **Approve** link. When the operator approves (from that link or from **/platform → Access requests**), a one-time 8-digit code is emailed to the applicant, valid **20 minutes**, five attempts maximum. The applicant enters email + code, chooses the administrator password, and the isolated enterprise (own buildings, tenants, finances, users, roles, numbering, branding) is created. Nothing is created without approval. Requests are limited per connection and every step is audited. Set `ALLOW_SELF_SIGNUP=false` to hide the button. Email sending requires the `SMTP_*` variables; without them, approve from the platform console and pass the code on yourself.

@@ -9,7 +9,7 @@ Status legend: [x] done · [~] partial / integration point only · [ ] not start
 - [x] Organization isolation + RBAC (permission catalogue, system roles, scopes, custom roles)
 - [x] Application shell: responsive sidebar, top bar, search, notifications, EN/FR, light/dark
 - [x] Admin: general, branding, users, roles, security, financial, notifications, integrations, numbering, audit logs, system status
-- [x] Properties and units
+- [x] Properties and units; interactive 3D building view generated from the data model
 - [x] Audit foundation (append-only, sanitised); audited platform support access
 **Dependencies:** none. **Risk:** permission gaps → mitigated by helpers + tests.
 

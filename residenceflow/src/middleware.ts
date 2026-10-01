@@ -33,6 +33,7 @@ export function middleware(req: NextRequest) {
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "connect-src 'self'",
+      "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

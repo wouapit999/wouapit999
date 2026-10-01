@@ -68,6 +68,7 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
         breadcrumbs={[{ label: t("unit.title"), href: "/units" }, { label: unit.property.name, href: `/properties/${unit.property.id}` }, { label }]}
         actions={
           <>
+            <LinkButton variant="secondary" href={`/properties/${unit.propertyId}/3d?unit=${unit.id}`}>🧊 {t("unit.view3d")}</LinkButton>
             {canNewLease && <LinkButton href={`/leases/new?unitId=${unit.id}`}>{t("unit.newLease")}</LinkButton>}
             {manage && !unit.archived && <LinkButton variant="secondary" href={`/units/${unit.id}/edit`}>{t("common.edit")}</LinkButton>}
             {manage && !unit.archived && (

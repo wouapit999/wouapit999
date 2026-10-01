@@ -41,6 +41,7 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
         breadcrumbs={[{ label: t("prop.title"), href: "/properties" }, { label: property.name }]}
         actions={
           <>
+            <LinkButton variant="secondary" href={`/properties/${property.id}/3d`}>🧊 {t("prop.view3d")}</LinkButton>
             {can(ctx, "unit.manage") && <LinkButton href={`/units/new?propertyId=${property.id}`}>{t("prop.addUnit")}</LinkButton>}
             {can(ctx, "building.update") && <LinkButton variant="secondary" href={`/properties/${property.id}/edit`}>{t("common.edit")}</LinkButton>}
             {can(ctx, "building.archive") && property.status !== "ARCHIVED" && (
