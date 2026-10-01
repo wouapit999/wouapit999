@@ -80,3 +80,7 @@ Prints a one-time temporary password; the user must choose a new one at next log
 DATABASE_URL="postgres://..." DIRECT_URL="postgres://..." npm run db:wipe
 ```
 Then open `/setup` on the site. Alternative without a workstation: delete the database in Vercel → Storage, create a new one, connect it to the project and redeploy.
+
+## Failed migration (Prisma error P3009)
+
+A migration that was interrupted half-way blocks later deploys. The Vercel build (`scripts/vercel-build.mjs`) repairs this automatically **only when the database holds no organization yet** (it recreates the schema and re-applies all migrations). When data exists it refuses and prints the migration name; an operator then decides, e.g. `npx prisma migrate resolve --rolled-back <name>` after checking which objects were created, then redeploy.
