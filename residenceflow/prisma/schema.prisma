@@ -255,6 +255,33 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 }
 
+/// Access request for a new enterprise: approved by the platform operator, then redeemed with a
+/// one-time code that expires 20 minutes after approval.
+model SignupRequest {
+  id                String    @id @default(uuid())
+  email             String
+  name              String
+  orgName           String
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED | USED | EXPIRED
+  approvalTokenHash String    @unique
+  approvalExpiresAt DateTime
+  codeHash          String?
+  codeExpiresAt     DateTime?
+  codeAttempts      Int       @default(0)
+  verifyTokenHash   String?   @unique
+  verifyExpiresAt   DateTime?
+  approvedAt        DateTime?
+  approvedBy        String?
+  usedAt            DateTime?
+  organizationId    String?
+  ip                String?
+  locale            String    @default("fr")
+  createdAt         DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@index([status, createdAt])
+}
+
 model LoginAttempt {
   id        String   @id @default(uuid())
   identifier String

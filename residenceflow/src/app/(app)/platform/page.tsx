@@ -5,7 +5,7 @@ import { formatDateTime } from "@/lib/format";
 import { getT } from "@/i18n";
 import { ActionForm, InlineAction, SubmitButton } from "@/components/forms";
 import { ResultForm } from "@/components/admin/result-form";
-import { Badge, Card, EmptyState, Input, PageHeader, Select, Table, Td, Th, Tr, Textarea, str } from "@/components/ui";
+import { Badge, Card, EmptyState, Input, LinkButton, PageHeader, Select, Table, Td, Th, Tr, Textarea, str } from "@/components/ui";
 import { hasRecentReauth } from "@/services/reauth";
 import { SUPPORT_DURATIONS, listSupportAccess, supportTargets } from "@/services/support-access";
 import { platformMessages } from "./messages";
@@ -36,7 +36,7 @@ export default async function PlatformPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader title={t("plat.title")} description={t("plat.subtitle")} />
+      <PageHeader title={t("plat.title")} description={t("plat.subtitle")} actions={<LinkButton href="/platform/access-requests" variant="secondary">{t("plat.accessRequests")}</LinkButton>} />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {orgs.length === 0 ? (

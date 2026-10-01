@@ -2,6 +2,7 @@ import type { ModuleMessages } from "@/i18n";
 
 export const platformMessages: ModuleMessages = {
   en: {
+    "plat.accessRequests": "Access requests",
     "plat.title": "Platform administration",
     "plat.subtitle": "Organizations hosted on this platform. Tenant and financial data are not accessible here.",
     "plat.orgs": "Organizations",
@@ -76,6 +77,7 @@ export const platformMessages: ModuleMessages = {
     "sup.resetIssued": "Reset link issued.",
   },
   fr: {
+    "plat.accessRequests": "Demandes d'accès",
     "plat.title": "Administration de la plateforme",
     "plat.subtitle": "Organisations hébergées sur la plateforme. Les données locataires et financières ne sont pas accessibles ici.",
     "plat.orgs": "Organisations",
