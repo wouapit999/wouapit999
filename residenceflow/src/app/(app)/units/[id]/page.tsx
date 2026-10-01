@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { can, maintenanceWhere, requireContext, unitWhere } from "@/lib/auth/context";
@@ -83,7 +84,7 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
             <DescriptionList
               items={[
                 { label: t("common.status"), value: unit.archived ? <Badge status="ARCHIVED">{t("unit.archived")}</Badge> : <Badge status={unit.status}>{t(`unit.status.${unit.status}`)}</Badge> },
-                { label: t("unit.building"), value: <Link className="hover:underline" href={`/properties/${unit.property.id}`}>{unit.property.name}</Link> },
+                { label: t("unit.building"), value: <PropertyLink id={unit.property.id} name={unit.property.name} /> },
                 { label: t("unit.block"), value: unit.block },
                 { label: t("unit.floor"), value: String(unit.floor) },
                 { label: t("unit.bedrooms"), value: String(unit.bedrooms) },

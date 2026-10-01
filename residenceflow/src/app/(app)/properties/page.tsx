@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { can, propertyWhere, requireContext } from "@/lib/auth/context";
@@ -70,7 +70,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
               return (
                 <Tr key={p.id}>
                   <Td className="font-mono text-xs">{p.reference}</Td>
-                  <Td><Link href={`/properties/${p.id}`} className="font-medium text-[var(--brand)] hover:underline">{p.name}</Link></Td>
+                  <Td><PropertyLink id={p.id} name={p.name} subtitle={[p.reference, p.city].filter(Boolean).join(" · ")} className="font-medium text-[var(--brand)] hover:underline" /></Td>
                   <Td>{t(`prop.type.${p.type}`)}</Td>
                   <Td>{p.city}</Td>
                   <Td>{p.units.length}</Td>

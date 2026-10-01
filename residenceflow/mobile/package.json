@@ -1,0 +1,25 @@
+{
+  "name": "gestpro-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GestPro mobile shell (Android & iOS) built with Capacitor",
+  "scripts": {
+    "build:www": "node scripts/build-www.mjs",
+    "sync": "npm run build:www && npx cap sync",
+    "assets": "npx @capacitor/assets generate --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'",
+    "android": "npm run sync && npx cap open android",
+    "ios": "npm run sync && npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { can, requireContext } from "@/lib/auth/context";
@@ -82,7 +83,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
               items={[
                 { label: t("doc.category"), value: t(`doc.cat.${doc.category}`) },
                 { label: t("doc.type"), value: `${doc.mimeType} · ${Math.max(1, Math.round(doc.size / 1024))} KB` },
-                { label: t("common.building"), value: property ? (can(ctx, "building.view") ? <Link className="hover:underline" href={`/properties/${property.id}`}>{property.name}</Link> : property.name) : null },
+                { label: t("common.building"), value: property ? (can(ctx, "building.view") ? <PropertyLink id={property.id} name={property.name} /> : property.name) : null },
                 { label: t("common.tenant"), value: tenant ? (can(ctx, "tenant.view") ? <Link className="hover:underline" href={`/tenants/${tenant.id}`}>{tenant.legalName}</Link> : tenant.legalName) : null },
                 { label: t("doc.lease"), value: lease ? (can(ctx, "lease.view") ? <Link className="hover:underline" href={`/leases/${lease.id}`}>{lease.reference}</Link> : lease.reference) : null },
                 { label: t("doc.uploaded"), value: `${formatDateTime(doc.createdAt, df)}${uploader ? ` · ${uploader.name}` : ""}` },

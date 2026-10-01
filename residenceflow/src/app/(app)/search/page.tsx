@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { can, invoiceWhere, leaseWhere, maintenanceWhere, propertyWhere, requireContext, tenantWhere, unitWhere } from "@/lib/auth/context";
@@ -99,10 +100,17 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             <ResultGroup key={g.key} title={`${t(g.key)} (${g.hits.length})`} t={t}>
               {g.hits.map((h) => (
                 <li key={h.id} className="flex items-center justify-between gap-2 py-2">
-                  <Link href={h.href} className="min-w-0 hover:underline">
-                    <span className="block truncate font-medium text-[var(--brand)]">{h.title}</span>
-                    {h.sub && <span className="block truncate text-xs text-slate-500">{h.sub}</span>}
-                  </Link>
+                  {g.key === "search.buildings" ? (
+                    <PropertyLink id={h.id} name={h.title} subtitle={h.sub} className="min-w-0 hover:underline">
+                      <span className="block truncate font-medium text-[var(--brand)]">{h.title}</span>
+                      {h.sub && <span className="block truncate text-xs text-slate-500">{h.sub}</span>}
+                    </PropertyLink>
+                  ) : (
+                    <Link href={h.href} className="min-w-0 hover:underline">
+                      <span className="block truncate font-medium text-[var(--brand)]">{h.title}</span>
+                      {h.sub && <span className="block truncate text-xs text-slate-500">{h.sub}</span>}
+                    </Link>
+                  )}
                   {h.status && <Badge status={h.status} />}
                 </li>
               ))}

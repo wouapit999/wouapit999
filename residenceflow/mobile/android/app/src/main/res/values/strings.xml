@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GestPro</string>
+    <string name="title_activity_main">GestPro</string>
+    <string name="package_name">net.bouquetinnovation.gestpro</string>
+    <string name="custom_url_scheme">net.bouquetinnovation.gestpro</string>
+</resources>

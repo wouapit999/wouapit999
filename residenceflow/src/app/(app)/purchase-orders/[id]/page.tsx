@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { byPropertyWhere, can, requireContext } from "@/lib/auth/context";
@@ -65,7 +66,7 @@ export default async function PurchaseOrderDetailPage({ params }: { params: Prom
             <DescriptionList
               items={[
                 { label: t("po.number"), value: po.number },
-                { label: t("common.building"), value: property ? <Link className="hover:underline" href={`/properties/${property.id}`}>{property.name}</Link> : t("po.orgWide") },
+                { label: t("common.building"), value: property ? <PropertyLink id={property.id} name={property.name} /> : t("po.orgWide") },
                 { label: t("po.vendor"), value: po.vendor ? <Link className="hover:underline" href={`/vendors/${po.vendor.id}`}>{po.vendor.name}</Link> : "—" },
                 { label: t("common.amount"), value: formatMoney(po.amount, fmt) },
                 { label: t("po.requestedBy"), value: nameOf(po.requestedById) },

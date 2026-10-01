@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import type { Prisma, UnitStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { can, propertyWhere, requireContext, unitWhere } from "@/lib/auth/context";
@@ -96,7 +97,7 @@ export default async function UnitsPage({ searchParams }: { searchParams: Promis
                   </Link>
                   <div className="text-xs text-slate-500">{t("unit.floor")} {u.floor}</div>
                 </Td>
-                <Td><Link className="hover:underline" href={`/properties/${u.property.id}`}>{u.property.name}</Link></Td>
+                <Td><PropertyLink id={u.property.id} name={u.property.name} /></Td>
                 <Td>{t(`unit.type.${u.type}`)} · {t("unit.beds", { n: u.bedrooms })}</Td>
                 <Td className="whitespace-nowrap">{formatMoney(u.defaultRent, fmt)}</Td>
                 {showTenant && (

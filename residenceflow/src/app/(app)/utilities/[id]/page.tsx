@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import { notFound } from "next/navigation";
 import { formatInTimeZone } from "date-fns-tz";
 import { db } from "@/lib/db";
@@ -71,7 +72,7 @@ export default async function MeterDetailPage({ params }: { params: Promise<{ id
               items={[
                 { label: t("util.utility"), value: t(`util.type.${meter.utility}`) },
                 { label: t("util.serial"), value: meter.serial },
-                { label: t("common.building"), value: <Link className="hover:underline" href={`/properties/${meter.property.id}`}>{meter.property.name}</Link> },
+                { label: t("common.building"), value: <PropertyLink id={meter.property.id} name={meter.property.name} /> },
                 { label: t("common.unit"), value: meter.unit ? <Link className="hover:underline" href={`/units/${meter.unit.id}`}>{meter.unit.number}</Link> : t("util.shared") },
                 { label: t("util.tariff"), value: money(meter.tariff).toFixed(4) },
                 { label: t("util.fixedFee"), value: formatMoney(meter.fixedFee, fmt) },

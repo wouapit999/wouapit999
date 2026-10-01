@@ -1,0 +1,136 @@
+name: Mobile apps
+
+# Builds the GestPro Android APK/AAB (and compiles the iOS project) from the Capacitor shell in mobile/.
+# The APK is attached to the rolling GitHub release "android-latest" so it can be downloaded directly:
+#   https://github.com/<owner>/<repo>/releases/download/android-latest/GestPro.apk
+#
+# Repository variable  APP_URL                 production URL of the web app (e.g. https://gestpro.vercel.app)
+# Repository secrets   ANDROID_KEYSTORE_BASE64 base64 of the upload keystore (optional; debug key otherwise)
+#                      ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Production URL of the web app (overrides the APP_URL variable)
+        required: false
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android APK & AAB
+    runs-on: ubuntu-latest
+    env:
+      GESTPRO_APP_URL: ${{ inputs.app_url || vars.APP_URL || 'https://gestpro-app.vercel.app' }}
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the mobile shell
+        working-directory: mobile
+        run: npm ci
+
+      - name: Sync Capacitor (bakes the app URL)
+        working-directory: mobile
+        run: |
+          echo "App URL: $GESTPRO_APP_URL"
+          npm run sync
+
+      - name: Restore the upload keystore
+        if: env.HAS_KEYSTORE == 'true'
+        working-directory: mobile/android
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > upload.keystore
+          echo "ANDROID_KEYSTORE_FILE=$PWD/upload.keystore" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Build release APK and Play bundle
+        working-directory: mobile/android
+        env:
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          ANDROID_VERSION_NAME: 1.0.${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease bundleRelease
+          mkdir -p ../../dist
+          cp app/build/outputs/apk/release/app-release.apk ../../dist/GestPro.apk
+          cp app/build/outputs/bundle/release/app-release.aab ../../dist/GestPro.aab
+          ls -la ../../dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestPro-android
+          path: dist/*
+
+      - name: Publish the downloadable APK (rolling release)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: GestPro for Android (latest)
+          body: |
+            GestPro Android app, build 1.0.${{ github.run_number }} — points to ${{ env.GESTPRO_APP_URL }}.
+
+            • **GestPro.apk** — install directly on an Android phone (allow "unknown sources" if asked).
+            • **GestPro.aab** — the bundle to upload to the Google Play Console.
+
+            Signed with the production upload key when the ANDROID_KEYSTORE_* secrets are configured, otherwise with a debug key (test installs only).
+          files: |
+            dist/GestPro.apk
+            dist/GestPro.aab
+          prerelease: false
+          make_latest: true
+
+  ios:
+    name: iOS project (compile check)
+    runs-on: macos-latest
+    env:
+      GESTPRO_APP_URL: ${{ inputs.app_url || vars.APP_URL || 'https://gestpro-app.vercel.app' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the mobile shell
+        working-directory: mobile
+        run: npm ci
+      - name: Sync Capacitor and install pods
+        working-directory: mobile
+        run: |
+          npm run sync
+          cd ios/App && pod install
+      - name: Build for the iOS simulator
+        working-directory: mobile/ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -40
+      - name: Archive the unsigned Xcode project
+        run: |
+          cd mobile && zip -qr ../GestPro-ios-project.zip ios capacitor.config.ts package.json package-lock.json scripts resources -x "ios/App/Pods/*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestPro-ios-project
+          path: GestPro-ios-project.zip

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PropertyLink } from "@/components/property-link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { byPropertyWhere, can, requireContext } from "@/lib/auth/context";
@@ -59,7 +60,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 { label: t("exp.date"), value: formatDay(e.expenseDate, prefs) },
                 { label: t("exp.category"), value: t(`exp.cat.${e.category}`) },
                 { label: t("common.status"), value: <Badge status={e.status}>{t(`exp.status.${e.status}`)}</Badge> },
-                { label: t("common.building"), value: e.property ? <Link className="hover:underline" href={`/properties/${e.property.id}`}>{e.property.name}</Link> : t("exp.orgWide") },
+                { label: t("common.building"), value: e.property ? <PropertyLink id={e.property.id} name={e.property.name} /> : t("exp.orgWide") },
                 { label: t("common.unit"), value: e.unit ? <Link className="hover:underline" href={`/units/${e.unit.id}`}>{e.unit.number}</Link> : "—" },
                 { label: t("exp.vendor"), value: e.vendor ? <Link className="hover:underline" href={`/vendors/${e.vendor.id}`}>{e.vendor.name}</Link> : "—" },
                 { label: t("exp.workOrder"), value: e.workOrder ? <Link className="hover:underline" href={`/maintenance/${e.workOrder.id}`}>{e.workOrder.number} — {e.workOrder.title}</Link> : "—" },

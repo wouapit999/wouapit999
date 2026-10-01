@@ -71,3 +71,4 @@ Each page is captured full-height at desktop (1280×800, `<role>-<page>.png`) an
 |---|---|---|
 | Building 3D view | ![](screenshots/admin-building-3d.png) | ![](screenshots/admin-building-3d-mobile.png) |
 | Unit selected (areas) | ![](screenshots/admin-building-3d-unit.png) | |
+| Building hover preview | ![](screenshots/admin-building-preview.png) | |

@@ -98,9 +98,25 @@ Optional variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMA
 
 `docker build -t residenceflow .` then `docker run -p 3000:3000 --env-file .env residenceflow` (runs migrations, then starts). Rollback, backups and the **restore procedure** are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
+## Mobile apps (Android & iOS)
+
+`mobile/` holds the Capacitor shell that packages GestPro for the stores (app id `net.bouquetinnovation.gestpro`). The apps load the hosted web application, so accounts, permissions and security are identical, and they fall back to an offline page without network. The **Mobile apps** GitHub workflow builds the Android APK and Play bundle on every change and attaches them to the rolling release `android-latest`:
+
+```
+https://github.com/wouapit999/residenceflow/releases/download/android-latest/GestPro.apk
+```
+
+It also compiles the iOS project on macOS so it is ready to archive in Xcode. Store setup (keystore, Play Console, App Store Connect, listings in EN/FR, privacy policy at `/privacy`) is documented in [mobile/README.md](mobile/README.md).
+
+## Sales material
+
+`marketing/` contains the sources of the bilingual sales deck (`GestPro-Presentation-EN.pptx`, `-FR.pptx`) and the promotional videos (`GestPro-Promo-EN.mp4`, `-FR.mp4`), generated from the real application screens; the finished files are in `marketing/dist/`.
+
 ## 3D building view
 
 Every building has a **3D view** (button on the building page, and "View in 3D" on each unit) generated from its own data: floors, blocks and units with their footprint (from the area) and live status colour. Rotate, zoom and pan; filter by floor or "explode" the floors; click a unit to see its areas (living room, kitchen, bedrooms, bathrooms, balcony — or shop/office floor) and open its page. No external assets: the model is computed in `src/domain/building-3d.ts` (unit-tested) and rendered client-side with Three.js (`src/components/three/`).
+
+Resting the pointer beside any building link (building list, unit pages, expenses, meters, documents, search) shows a **hover card with a picture of the building**: an isometric rendering of the same model, served as SVG by `/api/properties/:id/preview` with the viewer's permissions and scope applied (`src/domain/building-svg.ts`, `src/components/property-link.tsx`).
 
 ## Onboarding new clients (approval + 20-minute code)
 
