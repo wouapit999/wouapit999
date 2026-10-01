@@ -1,0 +1,187 @@
+{
+ "admin-dashboard": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-dashboard.png"
+ },
+ "admin-dashboard-dark": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-dashboard-dark.png"
+ },
+ "admin-building-preview": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-building-preview.png"
+ },
+ "admin-building-3d": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-building-3d.png"
+ },
+ "admin-building-3d-unit": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-building-3d-unit.png"
+ },
+ "admin-building-3d-exploded": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-building-3d-exploded.png"
+ },
+ "admin-invoices": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-invoices.png"
+ },
+ "admin-payments": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-payments.png"
+ },
+ "admin-arrears": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-arrears.png"
+ },
+ "admin-maintenance": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-maintenance.png"
+ },
+ "admin-tenant-detail": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-tenant-detail.png"
+ },
+ "admin-reports": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-reports.png"
+ },
+ "admin-admin-roles": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-admin-roles.png"
+ },
+ "admin-admin-audit-logs": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-admin-audit-logs.png"
+ },
+ "admin-leases": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-leases.png"
+ },
+ "admin-deposits": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-deposits.png"
+ },
+ "concierge-visitors": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/concierge-visitors.png"
+ },
+ "tenant-portal-home": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/tenant-portal-home.png"
+ },
+ "owner-dashboard": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/owner-dashboard.png"
+ },
+ "admin-units": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-units.png"
+ },
+ "public-login": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/public-login.png"
+ },
+ "admin-invoice-detail": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-invoice-detail.png"
+ },
+ "admin-properties": {
+  "w": 1280,
+  "h": 800,
+  "file": "assets/admin-properties.png"
+ },
+ "admin-dashboard-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/admin-dashboard-mobile.png"
+ },
+ "admin-building-3d-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/admin-building-3d-mobile.png"
+ },
+ "public-login-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/public-login-mobile.png"
+ },
+ "tenant-portal-billing-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/tenant-portal-billing-mobile.png"
+ },
+ "admin-payments-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/admin-payments-mobile.png"
+ },
+ "admin-maintenance-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/admin-maintenance-mobile.png"
+ },
+ "admin-dashboard-dark-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/admin-dashboard-dark-mobile.png"
+ },
+ "admin-arrears-mobile": {
+  "w": 390,
+  "h": 844,
+  "file": "assets/admin-arrears-mobile.png"
+ },
+ "admin-receipt-card": {
+  "w": 700,
+  "h": 430,
+  "file": "assets/admin-receipt-card.png"
+ },
+ "admin-dashboard-kpis": {
+  "w": 1040,
+  "h": 560,
+  "file": "assets/admin-dashboard-kpis.png"
+ },
+ "admin-dashboard-charts": {
+  "w": 1040,
+  "h": 650,
+  "file": "assets/admin-dashboard-charts.png"
+ },
+ "admin-arrears-table": {
+  "w": 1040,
+  "h": 500,
+  "file": "assets/admin-arrears-table.png"
+ },
+ "admin-admin-roles-table": {
+  "w": 700,
+  "h": 910,
+  "file": "assets/admin-admin-roles-table.png"
+ },
+ "admin-reports-grid": {
+  "w": 1040,
+  "h": 940,
+  "file": "assets/admin-reports-grid.png"
+ }
+}

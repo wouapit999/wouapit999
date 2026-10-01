@@ -7,8 +7,10 @@ android {
         applicationId "net.bouquetinnovation.gestpro"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (System.getenv("ANDROID_VERSION_CODE") ?: "1").toInteger()
-        versionName (System.getenv("ANDROID_VERSION_NAME") ?: "1.0.0")
+        def ciVersionCode = System.getenv("ANDROID_VERSION_CODE")
+        def ciVersionName = System.getenv("ANDROID_VERSION_NAME")
+        versionCode ciVersionCode != null ? ciVersionCode.toInteger() : 1
+        versionName ciVersionName != null ? ciVersionName : "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

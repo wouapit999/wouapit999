@@ -7,7 +7,7 @@ Native shells built with [Capacitor](https://capacitorjs.com) around the hosted 
 | App id | `net.bouquetinnovation.gestpro` |
 | Name | GestPro |
 | Min Android | 7.0 (API 24), target API 36 |
-| iOS | 14+ (Capacitor 8 default) |
+| iOS | 15+ (Swift Package Manager, no CocoaPods needed) |
 | App URL | `GESTPRO_APP_URL` at sync time (CI: repository variable `APP_URL`) |
 
 ## Downloadable APK
@@ -18,7 +18,7 @@ Every push to `main` that touches `mobile/` (or a manual run of the **Mobile app
 https://github.com/wouapit999/residenceflow/releases/download/android-latest/GestPro.apk
 ```
 
-The same release carries `GestPro.aab` for the Play Console. Without the signing secrets the build is signed with a debug key: fine for installing on your own phones, not accepted by Google Play.
+The same release carries `GestPro.aab` for the Play Console. While the repository is private the link asks for a GitHub sign-in; make the repository public or share the file itself to let clients download it. Without the signing secrets the build is signed with a debug key: fine for installing on your own phones, not accepted by Google Play.
 
 ## One-time setup for the stores
 

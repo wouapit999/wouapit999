@@ -1,0 +1,183 @@
+// English copy for the GestPro sales deck. Edit here; layout lives in build.js.
+module.exports = {
+  lang: "en",
+  file: "GestPro-Presentation-EN.pptx",
+  title: {
+    kicker: "Bouquet Innovation",
+    headline: "GestPro",
+    sub: "Property and rental management, finally under control.",
+    tag: "Rents, receipts, tenants, maintenance and reporting in one secure web application. Built for landlords, property managers, agencies and residences.",
+    foot: "Sales presentation  |  Douala, Cameroon  |  support@bouquet-innovation.net",
+  },
+  problem: {
+    title: "Managing rentals on paper and spreadsheets costs you money",
+    sub: "The same four problems come up in almost every conversation we have with owners and managers.",
+    cards: [
+      { icon: "FiTrendingDown", h: "Rent slips through the cracks", p: "Late tenants are noticed weeks later. Nobody knows exactly who owes what, since when." },
+      { icon: "FiFileText", h: "Paper receipts, zero traceability", p: "Carbon-copy booklets get lost, altered or duplicated. Cash is collected but never fully reconciled." },
+      { icon: "FiEyeOff", h: "No visibility for the owner", p: "Occupancy, collections and expenses live in someone's head. Monthly statements take days to assemble." },
+      { icon: "FiAlertTriangle", h: "Disputes and lost trust", p: "Tenant says they paid, cashier says they did not. Deposits are returned on guesswork." },
+    ],
+  },
+  answer: {
+    title: "GestPro gives you one source of truth",
+    sub: "Every building, tenant, invoice, payment and repair in a single bilingual application, accessible from any browser.",
+    points: [
+      { h: "See everything at a glance", p: "Occupancy, expected vs collected rent, arrears ageing, open work orders and visitors on site on one dashboard." },
+      { h: "Collect with confidence", p: "Automatic monthly invoices, numbered receipts that cannot be altered, and reminders that go out on time." },
+      { h: "Run the whole operation", p: "From rental applications to maintenance, concierge desk and owner statements, with a role for every person involved." },
+    ],
+    caption: "Manager dashboard, live figures in FCFA",
+  },
+  mod1: {
+    title: "Your portfolio, structured the way it really is",
+    sub: "Buildings, blocks, floors and units of every kind, with the people and contracts attached to them.",
+    bullets: [
+      "Apartments, studios, shops, offices, houses and rooms, each with its own status and rent",
+      "Tenant files with contacts, documents and complete history",
+      "Leases with rent schedules, security deposits and renewal alerts at 30, 60 and 90 days",
+      "Rental applications and screening before a key is handed over",
+      "Hover any building link to preview it instantly",
+    ],
+    capA: "Buildings list with hover preview",
+    capB: "Tenant file",
+  },
+  mod2: {
+    title: "Rent collection without the arguments",
+    sub: "Invoices go out by themselves. Every franc that comes in leaves a trace.",
+    bullets: [
+      "Automatic monthly invoices per lease, with utilities and late fees when applicable",
+      "Cash, mobile money, bank transfer or cheque, recorded by cashiers in seconds",
+      "Immutable, sequentially numbered receipts with a verification code, printable as PDF",
+      "Reversals only with approval; payment plans and deposit deductions documented",
+      "Bank reconciliation, expenses, purchase orders and recurring charges",
+    ],
+    capA: "Invoice register",
+    capB: "Numbered receipt",
+  },
+  mod3: {
+    title: "Arrears are visible before they become losses",
+    sub: "Who owes, how much, for how long, and what was done about it.",
+    stats: [
+      { n: "1-30", l: "days" }, { n: "31-60", l: "days" }, { n: "61-90", l: "days" }, { n: "90+", l: "days" },
+    ],
+    bullets: [
+      "Arrears ageing per tenant and per building, filtered in one click",
+      "Reminder notices and email notifications, with the follow-up date kept on file",
+      "Late fees applied by rule, not by memory",
+      "Payment plans for tenants who need time, tracked to the last instalment",
+      "Security deposits held, deducted and refunded with a clear statement",
+    ],
+    cap: "Arrears ageing report",
+  },
+  mod4: {
+    title: "Maintenance, front desk and tenant portal",
+    sub: "The daily life of a building, handled by the right people.",
+    cols: [
+      { h: "Maintenance", p: "Work orders with priority and category, assigned to in-house technicians or outside vendors, followed until closure.", img: "admin-maintenance" },
+      { h: "Concierge desk", p: "Visitor log, parcels awaiting collection, incidents, shift logs and key tracking for security staff.", img: "concierge-visitors" },
+      { h: "Tenant portal", p: "Tenants see their invoices and payment history, download receipts and submit requests themselves.", img: "tenant-portal-home" },
+    ],
+    extra: "Also included: announcements to residents, document library with expiry dates, utilities and meter readings.",
+  },
+  threeD: {
+    title: "Walk through your building in 3D, from any device",
+    sub: "GestPro draws each building from its own data: floors, blocks, units and their status colours. Click a unit to see its rooms.",
+    bullets: [
+      "Occupied, vacant and under-maintenance units at a glance",
+      "Rooms and surface of each unit, rent and current tenant",
+      "Responsive on phone, tablet and PC, light and dark mode",
+      "Android and iOS apps being released, built on the same secure platform",
+    ],
+    capA: "Interactive 3D view",
+    capB: "Unit detail with rooms",
+    capM: "On mobile",
+  },
+  security: {
+    title: "Built for trust",
+    sub: "Your figures are protected, and every action can be traced back to a person.",
+    items: [
+      { icon: "FiLock", h: "Strong authentication", p: "Strong password rules, two-factor authentication (TOTP) and account lockout after repeated failures." },
+      { icon: "FiShield", h: "Controlled sessions", p: "Session control and re-authentication before sensitive actions such as reversals or role changes." },
+      { icon: "FiList", h: "Full audit trail", p: "Every creation, change, payment and login is logged with who, when and from where." },
+      { icon: "FiUserCheck", h: "Approved sign-up only", p: "A new enterprise space is opened only after approval by Bouquet Innovation, with a one-time code valid 20 minutes." },
+      { icon: "FiRefreshCw", h: "Daily jobs and backups", p: "Automated daily processing, regular backups and a tested restore procedure." },
+      { icon: "FiCloud", h: "Cloud hosted", p: "Deployed on Vercel with managed PostgreSQL. Nothing to install, nothing to maintain on your side." },
+    ],
+    cap: "Audit log",
+  },
+  roles: {
+    title: "One space per company, a role for every person",
+    sub: "Each enterprise works in its own isolated environment. Thirteen roles with fine-grained permissions decide who sees and does what.",
+    roles: [
+      "Platform admin", "Organization admin", "Property manager", "Accountant", "Cashier",
+      "Concierge / Security", "Maintenance manager", "Technician", "Vendor",
+      "Owner (read-only)", "Auditor", "Tenant portal", "Support",
+    ],
+    note: "Owners see their own buildings only. Cashiers record payments but cannot reverse them. Custom roles can be cloned from any system role.",
+    cap: "Roles and permissions",
+  },
+  reports: {
+    title: "Reports your accountant and your owners will actually use",
+    sub: "Operational and financial reports, exportable to CSV, plus dashboards that update themselves.",
+    groups: [
+      { h: "Operational", items: ["Occupancy and vacancy", "Lease expirations", "Move-ins and move-outs", "Maintenance volume", "Visitors and incidents"] },
+      { h: "Financial", items: ["Collections and collection rate", "Arrears ageing", "Revenue by building", "Expenses by category", "Deposit liability and owner statement"] },
+    ],
+    cap: "Report catalogue",
+  },
+  onboard: {
+    title: "From first call to first receipt in days, not months",
+    sub: "We stay with you at every step.",
+    steps: [
+      { n: "1", h: "Request access", p: "Tell us about your portfolio. We confirm the fit and the package." },
+      { n: "2", h: "Approval", p: "Bouquet Innovation approves your enterprise and sends a one-time sign-up code." },
+      { n: "3", h: "Setup in minutes", p: "Create your company, buildings, units and users. Import tenants and leases." },
+      { n: "4", h: "Training", p: "Hands-on sessions for managers, cashiers and front-desk staff, in French or English." },
+      { n: "5", h: "Ongoing support", p: "Email support, regular updates and backups included." },
+    ],
+  },
+  who: {
+    title: "Who GestPro is for",
+    sub: "From a single building to a managed portfolio.",
+    cards: [
+      { icon: "FiHome", h: "Private landlords", p: "Keep track of tenants and rent without a full-time manager, from your phone." },
+      { icon: "FiBriefcase", h: "Property managers", p: "Run several owners' buildings with clear statements and audited cash handling." },
+      { icon: "FiUsers", h: "Real-estate agencies", p: "Rental applications, leases, collections and reporting for a growing client base." },
+      { icon: "FiLayers", h: "Residences and compounds", p: "Front desk, visitors, parcels, incidents and maintenance alongside rent management." },
+    ],
+  },
+  why: {
+    title: "Why teams choose GestPro",
+    items: [
+      { icon: "FiGlobe", h: "Bilingual", p: "French and English, switchable per user." },
+      { icon: "FiDollarSign", h: "XAF native", p: "FCFA amounts, Africa/Douala time, mobile money and cash built in." },
+      { icon: "FiSmartphone", h: "Works on phone", p: "Responsive web app today, Android and iOS apps rolling out." },
+      { icon: "FiList", h: "Audit trail", p: "Every action logged. Receipts that cannot be altered." },
+      { icon: "FiCloud", h: "Cloud", p: "Accessible from any browser, backed up daily." },
+      { icon: "FiShield", h: "2FA security", p: "Two-factor login, lockout, session control, approved sign-up." },
+    ],
+  },
+  packaging: {
+    title: "Packaging",
+    sub: "Three packages, priced on request according to the size of your portfolio.",
+    tiers: [
+      { name: "Starter", for: "Private landlords and small portfolios", items: ["Buildings, units, tenants and leases", "Automatic invoices and numbered receipts", "Payments: cash, mobile money, transfer, cheque", "Arrears tracking and reminders", "Standard dashboard and reports", "Email support"] },
+      { name: "Business", for: "Property managers and agencies", items: ["Everything in Starter", "Work orders, technicians and vendors", "Concierge module and tenant portal", "Deposits, payment plans, late fees, utilities", "Expenses, purchase orders, reconciliation", "Owner read-only access and 3D building view", "Training for your team"], featured: true },
+      { name: "Enterprise", for: "Residences, groups and multi-site operators", items: ["Everything in Business", "All 13 roles and custom roles", "Two-factor authentication enforced, audit exports", "Multi-enterprise organisation", "Priority support and onboarding assistance", "Mobile apps when released"] },
+    ],
+    price: "Price on request",
+  },
+  next: {
+    title: "Let's put your portfolio in order",
+    steps: ["Book a 30-minute demo on your own buildings", "Receive your sign-up code once approved", "Go live with your team in days"],
+    contact: "support@bouquet-innovation.net",
+    company: "Bouquet Innovation  |  Douala, Cameroon",
+    thanks: "Thank you",
+  },
+  notes: {
+    1: "Open with the name and one sentence: GestPro is the application that puts rent collection and building operations under control.",
+    2: "Ask the audience which of the four problems hurts most. Most managers recognise all four.",
+    3: "Dashboard is real. Point at expected vs collected and arrears ageing.",
+  },
+};

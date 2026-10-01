@@ -43,12 +43,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Install the mobile shell
         working-directory: mobile
-        run: npm ci
+        run: npm ci --omit=dev   # @capacitor/assets (sharp) is only needed to regenerate icons
 
       - name: Sync Capacitor (bakes the app URL)
         working-directory: mobile
@@ -113,23 +112,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
       - name: Install the mobile shell
         working-directory: mobile
-        run: npm ci
-      - name: Sync Capacitor and install pods
+        run: npm ci --omit=dev   # @capacitor/assets (sharp) is only needed to regenerate icons
+      - name: Sync Capacitor
         working-directory: mobile
-        run: |
-          npm run sync
-          cd ios/App && pod install
-      - name: Build for the iOS simulator
+        run: npm run sync
+      - name: Build for the iOS simulator (Swift Package Manager)
         working-directory: mobile/ios/App
         run: |
-          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tail -40
       - name: Archive the unsigned Xcode project
         run: |
-          cd mobile && zip -qr ../GestPro-ios-project.zip ios capacitor.config.ts package.json package-lock.json scripts resources -x "ios/App/Pods/*"
+          cd mobile && zip -qr ../GestPro-ios-project.zip ios capacitor.config.ts package.json package-lock.json scripts resources
       - uses: actions/upload-artifact@v4
         with:
           name: GestPro-ios-project

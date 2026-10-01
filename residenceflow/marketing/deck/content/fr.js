@@ -1,0 +1,183 @@
+// Textes français du deck GestPro. La mise en page est dans build.js.
+module.exports = {
+  lang: "fr",
+  file: "GestPro-Presentation-FR.pptx",
+  title: {
+    kicker: "Bouquet Innovation",
+    headline: "GestPro",
+    sub: "La gestion locative et immobilière, enfin maîtrisée.",
+    tag: "Loyers, quittances, locataires, maintenance et rapports dans une seule application web sécurisée. Conçue pour les bailleurs, gestionnaires, agences immobilières et résidences.",
+    foot: "Présentation commerciale  |  Douala, Cameroun  |  support@bouquet-innovation.net",
+  },
+  problem: {
+    title: "Gérer ses locations sur papier et tableurs coûte cher",
+    sub: "Les mêmes quatre problèmes reviennent dans presque toutes nos discussions avec les propriétaires et gestionnaires.",
+    cards: [
+      { icon: "FiTrendingDown", h: "Des loyers qui s'évaporent", p: "Les retards sont repérés des semaines plus tard. Personne ne sait exactement qui doit quoi, ni depuis quand." },
+      { icon: "FiFileText", h: "Des reçus papier, zéro traçabilité", p: "Les carnets à souche se perdent, se modifient ou se dupliquent. L'argent est encaissé mais jamais totalement rapproché." },
+      { icon: "FiEyeOff", h: "Aucune visibilité pour le propriétaire", p: "Taux d'occupation, encaissements et dépenses sont dans la tête d'une personne. Le relevé mensuel prend des jours." },
+      { icon: "FiAlertTriangle", h: "Litiges et confiance perdue", p: "Le locataire affirme avoir payé, le caissier dit le contraire. Les cautions sont restituées à l'estime." },
+    ],
+  },
+  answer: {
+    title: "GestPro vous donne une seule source de vérité",
+    sub: "Chaque immeuble, locataire, facture, paiement et réparation dans une application bilingue, accessible depuis n'importe quel navigateur.",
+    points: [
+      { h: "Tout voir d'un coup d'œil", p: "Occupation, loyers attendus et encaissés, ancienneté des impayés, interventions ouvertes et visiteurs présents sur un seul tableau de bord." },
+      { h: "Encaisser en toute confiance", p: "Factures mensuelles automatiques, quittances numérotées et infalsifiables, relances envoyées à temps." },
+      { h: "Piloter toute l'exploitation", p: "Du dossier de candidature à la maintenance, la conciergerie et les relevés propriétaires, avec un rôle pour chaque intervenant." },
+    ],
+    caption: "Tableau de bord gestionnaire, chiffres réels en FCFA",
+  },
+  mod1: {
+    title: "Votre patrimoine, structuré tel qu'il est vraiment",
+    sub: "Immeubles, blocs, étages et lots de tous types, avec les personnes et les contrats qui s'y rattachent.",
+    bullets: [
+      "Appartements, studios, boutiques, bureaux, maisons et chambres, chacun avec son statut et son loyer",
+      "Dossiers locataires avec contacts, documents et historique complet",
+      "Baux avec échéanciers de loyer, cautions et alertes de renouvellement à 30, 60 et 90 jours",
+      "Candidatures locatives et vérification avant la remise des clés",
+      "Survolez un immeuble pour l'apercevoir instantanément",
+    ],
+    capA: "Liste des immeubles avec aperçu au survol",
+    capB: "Dossier locataire",
+  },
+  mod2: {
+    title: "Des encaissements sans discussion",
+    sub: "Les factures partent toutes seules. Chaque franc encaissé laisse une trace.",
+    bullets: [
+      "Factures mensuelles automatiques par bail, avec charges et pénalités de retard le cas échéant",
+      "Espèces, mobile money, virement ou chèque, saisis par les caissiers en quelques secondes",
+      "Quittances numérotées, infalsifiables, avec code de vérification, imprimables en PDF",
+      "Annulations uniquement sur approbation ; échéanciers et retenues sur caution documentés",
+      "Rapprochement bancaire, dépenses, bons de commande et charges récurrentes",
+    ],
+    capA: "Registre des factures",
+    capB: "Quittance numérotée",
+  },
+  mod3: {
+    title: "Les impayés sont visibles avant de devenir des pertes",
+    sub: "Qui doit, combien, depuis combien de temps, et ce qui a été fait.",
+    stats: [
+      { n: "1-30", l: "jours" }, { n: "31-60", l: "jours" }, { n: "61-90", l: "jours" }, { n: "90+", l: "jours" },
+    ],
+    bullets: [
+      "Ancienneté des impayés par locataire et par immeuble, filtrée en un clic",
+      "Avis de relance et notifications par e-mail, avec la date de suivi conservée au dossier",
+      "Pénalités de retard appliquées selon la règle, pas de mémoire",
+      "Échéanciers de paiement pour les locataires qui ont besoin de temps, suivis jusqu'à la dernière échéance",
+      "Cautions détenues, retenues et remboursées avec un décompte clair",
+    ],
+    cap: "État des impayés par ancienneté",
+  },
+  mod4: {
+    title: "Maintenance, accueil et portail locataire",
+    sub: "Le quotidien d'un immeuble, pris en charge par les bonnes personnes.",
+    cols: [
+      { h: "Maintenance", p: "Ordres de travail avec priorité et catégorie, confiés aux techniciens internes ou aux prestataires, suivis jusqu'à la clôture.", img: "admin-maintenance" },
+      { h: "Conciergerie", p: "Registre des visiteurs, colis en attente, incidents, main courante et suivi des clés pour le personnel de sécurité.", img: "concierge-visitors" },
+      { h: "Portail locataire", p: "Les locataires consultent leurs factures et paiements, téléchargent leurs quittances et déposent leurs demandes.", img: "tenant-portal-home" },
+    ],
+    extra: "Également inclus : annonces aux résidents, documents avec dates d'expiration, compteurs et relevés de consommation.",
+  },
+  threeD: {
+    title: "Parcourez votre immeuble en 3D, depuis n'importe quel appareil",
+    sub: "GestPro dessine chaque immeuble à partir de ses propres données : étages, blocs, lots et couleurs de statut. Cliquez sur un lot pour voir ses pièces.",
+    bullets: [
+      "Lots occupés, vacants et en maintenance d'un seul regard",
+      "Pièces et surface de chaque lot, loyer et locataire en place",
+      "Adapté au téléphone, à la tablette et au PC, mode clair et sombre",
+      "Applications Android et iOS en cours de sortie, sur la même plateforme sécurisée",
+    ],
+    capA: "Vue 3D interactive",
+    capB: "Détail d'un lot avec ses pièces",
+    capM: "Sur mobile",
+  },
+  security: {
+    title: "Conçu pour inspirer confiance",
+    sub: "Vos chiffres sont protégés et chaque action peut être rattachée à une personne.",
+    items: [
+      { icon: "FiLock", h: "Authentification forte", p: "Règles de mots de passe robustes, double authentification (TOTP) et verrouillage du compte après échecs répétés." },
+      { icon: "FiShield", h: "Sessions contrôlées", p: "Contrôle des sessions et ré-authentification avant les actions sensibles comme les annulations ou les changements de rôle." },
+      { icon: "FiList", h: "Piste d'audit complète", p: "Chaque création, modification, paiement et connexion est journalisé : qui, quand, d'où." },
+      { icon: "FiUserCheck", h: "Inscription sur approbation", p: "Un espace entreprise n'est ouvert qu'après validation par Bouquet Innovation, avec un code à usage unique valable 20 minutes." },
+      { icon: "FiRefreshCw", h: "Traitements et sauvegardes", p: "Traitements quotidiens automatisés, sauvegardes régulières et procédure de restauration éprouvée." },
+      { icon: "FiCloud", h: "Hébergé dans le cloud", p: "Déployé sur Vercel avec PostgreSQL managé. Rien à installer, rien à maintenir de votre côté." },
+    ],
+    cap: "Journal d'audit",
+  },
+  roles: {
+    title: "Un espace par entreprise, un rôle pour chacun",
+    sub: "Chaque entreprise travaille dans un environnement isolé. Treize rôles aux permissions fines décident qui voit et qui fait quoi.",
+    roles: [
+      "Administrateur plateforme", "Administrateur organisation", "Gestionnaire immobilier", "Comptable", "Caissier",
+      "Concierge / Sécurité", "Responsable maintenance", "Technicien", "Prestataire",
+      "Propriétaire (lecture seule)", "Auditeur", "Portail locataire", "Support",
+    ],
+    note: "Les propriétaires ne voient que leurs immeubles. Les caissiers enregistrent les paiements mais ne peuvent pas les annuler. Des rôles personnalisés se créent par copie d'un rôle système.",
+    cap: "Rôles et permissions",
+  },
+  reports: {
+    title: "Des rapports que votre comptable et vos propriétaires utiliseront vraiment",
+    sub: "Rapports opérationnels et financiers, exportables en CSV, et tableaux de bord qui se mettent à jour seuls.",
+    groups: [
+      { h: "Opérationnel", items: ["Occupation et vacance", "Fins de bail", "Entrées et sorties", "Volume de maintenance", "Visiteurs et incidents"] },
+      { h: "Financier", items: ["Encaissements et taux de recouvrement", "Ancienneté des impayés", "Revenus par immeuble", "Dépenses par catégorie", "Cautions détenues et relevé propriétaire"] },
+    ],
+    cap: "Catalogue des rapports",
+  },
+  onboard: {
+    title: "Du premier appel à la première quittance en quelques jours",
+    sub: "Nous vous accompagnons à chaque étape.",
+    steps: [
+      { n: "1", h: "Demande d'accès", p: "Parlez-nous de votre patrimoine. Nous confirmons l'adéquation et la formule." },
+      { n: "2", h: "Approbation", p: "Bouquet Innovation valide votre entreprise et envoie un code d'inscription à usage unique." },
+      { n: "3", h: "Mise en place en minutes", p: "Créez votre société, vos immeubles, lots et utilisateurs. Importez locataires et baux." },
+      { n: "4", h: "Formation", p: "Sessions pratiques pour gestionnaires, caissiers et personnel d'accueil, en français ou en anglais." },
+      { n: "5", h: "Support continu", p: "Assistance par e-mail, mises à jour régulières et sauvegardes incluses." },
+    ],
+  },
+  who: {
+    title: "À qui s'adresse GestPro",
+    sub: "D'un seul immeuble à un patrimoine géré pour compte de tiers.",
+    cards: [
+      { icon: "FiHome", h: "Bailleurs particuliers", p: "Suivez vos locataires et vos loyers sans gestionnaire à plein temps, depuis votre téléphone." },
+      { icon: "FiBriefcase", h: "Gestionnaires immobiliers", p: "Gérez les immeubles de plusieurs propriétaires avec des relevés clairs et une caisse auditée." },
+      { icon: "FiUsers", h: "Agences immobilières", p: "Candidatures, baux, encaissements et reporting pour une clientèle qui grandit." },
+      { icon: "FiLayers", h: "Résidences et cités", p: "Accueil, visiteurs, colis, incidents et maintenance aux côtés de la gestion des loyers." },
+    ],
+  },
+  why: {
+    title: "Pourquoi les équipes choisissent GestPro",
+    items: [
+      { icon: "FiGlobe", h: "Bilingue", p: "Français et anglais, au choix de chaque utilisateur." },
+      { icon: "FiDollarSign", h: "Pensé en FCFA", p: "Montants en XAF, heure de Douala, mobile money et espèces intégrés." },
+      { icon: "FiSmartphone", h: "Sur téléphone", p: "Application web adaptée dès aujourd'hui, applis Android et iOS en déploiement." },
+      { icon: "FiList", h: "Piste d'audit", p: "Chaque action journalisée. Des quittances infalsifiables." },
+      { icon: "FiCloud", h: "Cloud", p: "Accessible depuis tout navigateur, sauvegardé chaque jour." },
+      { icon: "FiShield", h: "Sécurité 2FA", p: "Double authentification, verrouillage, contrôle des sessions, inscription approuvée." },
+    ],
+  },
+  packaging: {
+    title: "Nos formules",
+    sub: "Trois formules, tarifées sur devis selon la taille de votre patrimoine.",
+    tiers: [
+      { name: "Starter", for: "Bailleurs particuliers et petits patrimoines", items: ["Immeubles, lots, locataires et baux", "Factures automatiques et quittances numérotées", "Paiements : espèces, mobile money, virement, chèque", "Suivi des impayés et relances", "Tableau de bord et rapports standards", "Assistance par e-mail"] },
+      { name: "Business", for: "Gestionnaires et agences immobilières", items: ["Tout Starter", "Ordres de travail, techniciens et prestataires", "Module conciergerie et portail locataire", "Cautions, échéanciers, pénalités, compteurs", "Dépenses, bons de commande, rapprochement", "Accès propriétaire en lecture et vue 3D", "Formation de votre équipe"], featured: true },
+      { name: "Enterprise", for: "Résidences, groupes et opérateurs multi-sites", items: ["Tout Business", "Les 13 rôles et rôles personnalisés", "Double authentification imposée, exports d'audit", "Organisation multi-entreprises", "Support prioritaire et accompagnement au démarrage", "Applications mobiles dès leur sortie"] },
+    ],
+    price: "Tarif sur devis",
+  },
+  next: {
+    title: "Mettons de l'ordre dans votre patrimoine",
+    steps: ["Réservez une démonstration de 30 minutes sur vos propres immeubles", "Recevez votre code d'inscription après approbation", "Démarrez avec votre équipe en quelques jours"],
+    contact: "support@bouquet-innovation.net",
+    company: "Bouquet Innovation  |  Douala, Cameroun",
+    thanks: "Merci",
+  },
+  notes: {
+    1: "Ouvrir avec le nom et une phrase : GestPro est l'application qui met l'encaissement des loyers et l'exploitation des immeubles sous contrôle.",
+    2: "Demander à l'auditoire lequel des quatre problèmes fait le plus mal. La plupart des gestionnaires reconnaissent les quatre.",
+    3: "Le tableau de bord est réel. Montrer attendu vs encaissé et l'ancienneté des impayés.",
+  },
+};
