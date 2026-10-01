@@ -98,6 +98,10 @@ Optional variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMA
 
 `docker build -t residenceflow .` then `docker run -p 3000:3000 --env-file .env residenceflow` (runs migrations, then starts). Rollback, backups and the **restore procedure** are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
+## Onboarding new clients
+
+The login page has a **Create a new enterprise** button (`/signup`). A new client enters the company name, their name, email and password; GestPro creates an isolated organization (own buildings, tenants, finances, users, roles, numbering and branding) and signs them in as its administrator. Set `SIGNUP_CODE` to require a registration code, or `ALLOW_SELF_SIGNUP=false` to turn the button off; sign-ups are limited to 10 per hour per connection and audited. The platform super-administrator sees every organization under **/platform**.
+
 ## Key guarantees
 
 - Passwords are bcrypt-hashed; administrators can send reset links or force a change but can never view or set a password.

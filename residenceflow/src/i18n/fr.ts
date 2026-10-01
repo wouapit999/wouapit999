@@ -101,6 +101,8 @@ export const fr: Record<MessageKey, string> = {
   "auth.unauthorized": "Vous n'avez pas l'autorisation d'afficher cette page.",
   "auth.activate": "Activer votre compte",
   "auth.tokenInvalid": "Ce lien est invalide ou a expiré.",
+  "auth.newEnterprise": "Créer une nouvelle entreprise",
+  "auth.newEnterpriseHint": "Nouveau client ? Créez votre propre espace en une minute.",
   "password.tooShort": "Le mot de passe est trop court.",
   "password.tooLong": "Le mot de passe est trop long.",
   "password.complexity": "Utilisez au moins trois types : minuscules, majuscules, chiffres, symboles.",

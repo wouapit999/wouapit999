@@ -6,6 +6,8 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { Alert, Input } from "@/components/ui";
 import { getT } from "@/i18n";
 import { db } from "@/lib/db";
+import { selfSignupEnabled } from "@/services/enterprise";
+import { LinkButton } from "@/components/ui";
 
 export const metadata = { title: "Sign in" };
 
@@ -25,6 +27,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <Input label={t("auth.password")} name="password" type="password" autoComplete="current-password" required />
         <SubmitButton className="w-full">{t("auth.signIn")}</SubmitButton>
       </ActionForm>
+      {selfSignupEnabled() && (
+        <div className="mt-4">
+          <LinkButton href="/signup" variant="secondary" className="w-full">{t("auth.newEnterprise")}</LinkButton>
+          <p className="mt-1 text-center text-xs text-slate-500 dark:text-slate-400">{t("auth.newEnterpriseHint")}</p>
+        </div>
+      )}
       <p className="mt-4 text-sm">
         <Link href="/forgot-password" className="text-[var(--brand)] hover:underline">{t("auth.forgot")}</Link>
       </p>

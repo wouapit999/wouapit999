@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/forgot-password", "/reset-password", "/activate-account", "/mfa", "/unauthorized", "/setup", "/verify", "/api/health", "/api/cron", "/api/webhooks", "/_next", "/favicon"];
+const PUBLIC_PREFIXES = ["/login", "/forgot-password", "/reset-password", "/activate-account", "/mfa", "/unauthorized", "/setup", "/signup", "/verify", "/api/health", "/api/cron", "/api/webhooks", "/_next", "/favicon"];
 
 /**
  * Edge middleware: adds security headers + a correlation ID, and short-circuits unauthenticated

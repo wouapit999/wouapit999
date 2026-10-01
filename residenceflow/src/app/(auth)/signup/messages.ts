@@ -1,0 +1,36 @@
+import type { ModuleMessages } from "@/i18n";
+
+export const signupMessages: ModuleMessages = {
+  en: {
+    "signup.title": "Create a new enterprise",
+    "signup.subtitle": "Set up a separate, private workspace for a property company or building. You become its administrator and can invite your team afterwards.",
+    "signup.org": "Enterprise / company name",
+    "signup.adminName": "Your name",
+    "signup.adminEmail": "Your email (this is your username)",
+    "signup.code": "Registration code",
+    "signup.codeHint": "Provided by the platform operator.",
+    "signup.passwordHint": "At least 10 characters, with three of: lowercase, uppercase, digits, symbols.",
+    "signup.submit": "Create my enterprise",
+    "signup.haveAccount": "Already have an account?",
+    "signup.disabled": "Self-service sign-up is disabled. Contact the platform operator.",
+    "signup.badCode": "The registration code is not valid.",
+    "signup.rateLimited": "Too many sign-ups from this connection. Please try again later.",
+    "signup.isolation": "Each enterprise has its own buildings, tenants, finances, users and settings. Data is never shared between enterprises.",
+  },
+  fr: {
+    "signup.title": "Créer une nouvelle entreprise",
+    "signup.subtitle": "Créez un espace séparé et privé pour une société immobilière ou un immeuble. Vous en devenez l'administrateur et pourrez ensuite inviter votre équipe.",
+    "signup.org": "Nom de l'entreprise / société",
+    "signup.adminName": "Votre nom",
+    "signup.adminEmail": "Votre e-mail (c'est votre identifiant)",
+    "signup.code": "Code d'inscription",
+    "signup.codeHint": "Fourni par l'opérateur de la plateforme.",
+    "signup.passwordHint": "Au moins 10 caractères, avec trois types parmi : minuscules, majuscules, chiffres, symboles.",
+    "signup.submit": "Créer mon entreprise",
+    "signup.haveAccount": "Vous avez déjà un compte ?",
+    "signup.disabled": "L'inscription en libre-service est désactivée. Contactez l'opérateur de la plateforme.",
+    "signup.badCode": "Le code d'inscription n'est pas valide.",
+    "signup.rateLimited": "Trop d'inscriptions depuis cette connexion. Veuillez réessayer plus tard.",
+    "signup.isolation": "Chaque entreprise a ses propres immeubles, locataires, finances, utilisateurs et paramètres. Les données ne sont jamais partagées entre entreprises.",
+  },
+};

@@ -100,6 +100,8 @@ export const en = {
   "auth.unauthorized": "You do not have permission to view this page.",
   "auth.activate": "Activate your account",
   "auth.tokenInvalid": "This link is invalid or has expired.",
+  "auth.newEnterprise": "Create a new enterprise",
+  "auth.newEnterpriseHint": "New client? Set up your own workspace in a minute.",
   "password.tooShort": "Password is too short.",
   "password.tooLong": "Password is too long.",
   "password.complexity": "Use at least three of: lowercase, uppercase, digits, symbols.",
