@@ -21,10 +21,18 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 LANG = (sys.argv[1] if len(sys.argv) > 1 else "en").lower()
 ROOT = Path("/home/user/residenceflow")
 SCRATCH = Path("/tmp/claude-0/-home-user-wouapit999/04f28657-26f1-5632-b4c6-df1d99bb088e/scratchpad/video")
-WORK = SCRATCH / f"build-{LANG}"
+# Optional environment overrides:
+#   GESTPRO_VARIANT=foyou      targeted pitch for Groupe Foyou (logo plates + addressed copy); default: generic promo
+#   GESTPRO_MUSIC=/path.mp3    background music (default: the client-supplied track below)
+#   GESTPRO_OUT_SUFFIX=Name    output file GestPro-<Name>-<LANG>.mp4 (default: "Promo", or "Groupe-Foyou" for the foyou variant)
+VARIANT = os.environ.get("GESTPRO_VARIANT", "").strip().lower()
+WORK = SCRATCH / (f"build-{LANG}" + (f"-{VARIANT}" if VARIANT else ""))
 DIST = ROOT / "marketing" / "dist"
 FF = "/usr/local/lib/python3.11/dist-packages/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v7.0.2"
-MUSIC = "/root/.claude/uploads/04f28657-26f1-5632-b4c6-df1d99bb088e/34b4075b-Legacy_in_Your_Bloodline.mp3"
+DEFAULT_MUSIC = "/root/.claude/uploads/04f28657-26f1-5632-b4c6-df1d99bb088e/34b4075b-Legacy_in_Your_Bloodline.mp3"
+MUSIC = os.environ.get("GESTPRO_MUSIC") or DEFAULT_MUSIC
+OUT_SUFFIX = os.environ.get("GESTPRO_OUT_SUFFIX") or ("Groupe-Foyou" if VARIANT == "foyou" else "Promo")
+PROSPECT = {"name": "Groupe Foyou", "logo": ROOT / "marketing" / "video" / "assets" / "groupe-foyou-logo.png"} if VARIANT == "foyou" else None
 SHOTS = SCRATCH / f"shots-{LANG}"
 DOCSHOTS = ROOT / "docs" / "screenshots"
 REC = SCRATCH / f"rec-{LANG}" / f"rec-{LANG}.mp4"
@@ -120,6 +128,38 @@ T = {
         "phone_labels": ["Gestionnaire", "Portail locataire", "Mode sombre"],
     },
 }[LANG]
+
+if PROSPECT:
+    T.update({
+        "en": {
+            "title_sub": "A proposal for Groupe Foyou",
+            "problem_h": "Does this sound familiar, Groupe Foyou?",
+            "problem": [
+                "Is rent slipping through the cracks, month after month?",
+                "Are paper receipts getting lost or disputed by tenants?",
+                "Do you know exactly who owes what, right now?",
+            ],
+            "dashboard": ("All of Groupe Foyou's buildings on one screen", "Occupancy, collections, arrears and work orders, updated live"),
+            "trust_h": "Ready for Groupe Foyou's portfolio",
+            "cta_h": "Groupe Foyou, ask for your demonstration",
+            "cta_apps": "On-site demonstration within 48 hours",
+            "close_tag": "Groupe Foyou + GestPro",
+        },
+        "fr": {
+            "title_sub": "Une proposition pour Groupe Foyou",
+            "problem_h": "Groupe Foyou, ça vous parle ?",
+            "problem": [
+                "Des loyers qui vous échappent, mois après mois ?",
+                "Des reçus papier égarés ou contestés par vos locataires ?",
+                "Savez-vous précisément qui vous doit quoi, aujourd'hui ?",
+            ],
+            "dashboard": ("Tous les immeubles de Groupe Foyou sur un seul écran", "Occupation, encaissements, impayés et interventions, en temps réel"),
+            "trust_h": "Prêt pour le parc de Groupe Foyou",
+            "cta_h": "Groupe Foyou, demandez votre démonstration",
+            "cta_apps": "Démonstration sur site sous 48 h",
+            "close_tag": "Groupe Foyou + GestPro",
+        },
+    }[LANG])
 
 
 # ----------------------------------------------------------------------------- drawing helpers
@@ -220,6 +260,31 @@ def check_layer(size=34):
     return img
 
 
+def prospect_plate(scale=1.0, pad=None):
+    """The prospect's logo, upscaled with LANCZOS (<= 2.5x) on a white rounded plate so it reads on navy."""
+    logo = Image.open(PROSPECT["logo"]).convert("RGBA")
+    f = min(2.5, scale)
+    logo = logo.resize((int(logo.width * f), int(logo.height * f)), Image.LANCZOS)
+    pad = pad if pad is not None else max(10, int(14 * f))
+    w, h = logo.width + 2 * pad, logo.height + 2 * pad
+    plate = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(plate).rounded_rectangle((0, 0, w - 1, h - 1), radius=int(min(w, h) * 0.18), fill=(255, 255, 255, 255))
+    plate.alpha_composite(logo, (pad, pad))
+    return plate
+
+
+def hstack(parts, gap=28):
+    """Horizontally stacks RGBA layers, vertically centred."""
+    h = max(p.height for p in parts)
+    w = sum(p.width for p in parts) + gap * (len(parts) - 1)
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    x = 0
+    for p in parts:
+        out.alpha_composite(p, (x, (h - p.height) // 2))
+        x += p.width + gap
+    return out
+
+
 def ease(t):
     return 1 - (1 - t) ** 3
 
@@ -262,9 +327,14 @@ def caption_png(name, head, proof):
     band_top = H - 150
     d.rectangle((0, band_top, W, H), fill=NAVY + (222,))
     d.rectangle((64, band_top + 30, 70, H - 30), fill=EMERALD)
-    fh = fit_font(F_BOLD, head, W - 64 - 100, 40, 28)
+    text_w = W - 64 - 100
+    if PROSPECT:
+        plate = prospect_plate(0.72, pad=8)
+        img.alpha_composite(plate, (W - plate.width - 36, band_top + (150 - plate.height) // 2))
+        text_w -= plate.width + 36
+    fh = fit_font(F_BOLD, head, text_w, 40, 28)
     d.text((92, band_top + 26), head, font=fh, fill=WHITE)
-    fp = fit_font(F_REG, proof, W - 64 - 100, 25, 19)
+    fp = fit_font(F_REG, proof, text_w, 25, 19)
     d.text((92, band_top + 92), proof, font=fp, fill=SLATE)
     # small brand chip top-right so the product name is always on screen
     chip = logo_layer(0.36)
@@ -412,16 +482,31 @@ def build_scenes():
     bg = gradient_bg()
 
     # 1. Title card
-    logo = logo_layer(1.5)
     tag = text_layer(T["tagline"], fit_font(F_REG, T["tagline"], 1000, 44), SLATE)
     by = text_layer(T["by"], font(F_REG, 26), SLATE2)
     rule = Image.new("RGBA", (120, 5), EMERALD + (255,))
-    scenes.append(render_card("title", 5.5, bg, [
-        {"img": logo, "x": (W - logo.width) / 2, "y": 215, "t0": 0.2, "fade": 0.9},
-        {"img": rule, "x": (W - 120) / 2, "y": 345, "t0": 0.9, "fade": 0.6},
-        {"img": tag, "x": (W - tag.width) / 2, "y": 375, "t0": 1.1, "fade": 0.8},
-        {"img": by, "x": (W - by.width) / 2, "y": 445, "t0": 1.9, "fade": 0.8},
-    ]))
+    if PROSPECT:
+        logo = logo_layer(1.15)
+        cross = text_layer("\u00d7", font(F_REG, 64), SLATE2)
+        plate = prospect_plate(1.7)
+        sub = text_layer(T["title_sub"], font(F_REG, 30), WHITE)
+        scenes.append(render_card("title", 6.0, bg, [
+            {"img": logo, "x": (W - (logo.width + cross.width + plate.width + 72)) / 2, "y": 190 + (plate.height - logo.height) / 2, "t0": 0.2, "fade": 0.9},
+            {"img": cross, "x": (W - (logo.width + cross.width + plate.width + 72)) / 2 + logo.width + 36, "y": 190 + (plate.height - cross.height) / 2, "t0": 0.9, "fade": 0.6},
+            {"img": plate, "x": (W - (logo.width + cross.width + plate.width + 72)) / 2 + logo.width + cross.width + 72, "y": 190, "t0": 1.1, "fade": 0.9, "slide": 30},
+            {"img": sub, "x": (W - sub.width) / 2, "y": 190 + plate.height + 40, "t0": 2.0, "fade": 0.8},
+            {"img": rule, "x": (W - 120) / 2, "y": 190 + plate.height + 100, "t0": 2.5, "fade": 0.6},
+            {"img": tag, "x": (W - tag.width) / 2, "y": 190 + plate.height + 122, "t0": 2.7, "fade": 0.8},
+            {"img": by, "x": (W - by.width) / 2, "y": 190 + plate.height + 186, "t0": 3.3, "fade": 0.8},
+        ]))
+    else:
+        logo = logo_layer(1.5)
+        scenes.append(render_card("title", 5.5, bg, [
+            {"img": logo, "x": (W - logo.width) / 2, "y": 215, "t0": 0.2, "fade": 0.9},
+            {"img": rule, "x": (W - 120) / 2, "y": 345, "t0": 0.9, "fade": 0.6},
+            {"img": tag, "x": (W - tag.width) / 2, "y": 375, "t0": 1.1, "fade": 0.8},
+            {"img": by, "x": (W - by.width) / 2, "y": 445, "t0": 1.9, "fade": 0.8},
+        ]))
 
     # 2. Problem card
     ph = text_layer(T["problem_h"], font(F_BOLD, 52), WHITE)
@@ -462,8 +547,11 @@ def build_scenes():
     scenes.append(render_still("phones", pp, 5.5, *T["phones"], z0=1.0, z1=1.07, a0=(0.5, 0.45), a1=(0.5, 0.4)))
 
     # 6. Trust card
-    th = text_layer(T["trust_h"], font(F_BOLD, 50), WHITE)
+    tp = prospect_plate(1.0) if PROSPECT else None
+    th = text_layer(T["trust_h"], fit_font(F_BOLD, T["trust_h"], (W - 220 - tp.width - 48) if tp else 1060, 50, 34), WHITE)
     layers = [{"img": th, "x": 110, "y": 95, "t0": 0.3, "fade": 0.8}]
+    if tp:
+        layers.append({"img": tp, "x": W - 110 - tp.width, "y": 95 + (th.height - tp.height) / 2, "t0": 0.6, "fade": 0.8})
     y = 205
     for i, (a, b) in enumerate(T["trust"]):
         ck = check_layer(36)
@@ -485,23 +573,29 @@ def build_scenes():
     ImageDraw.Draw(pill).text((36, 18), T["cta_mail"], font=mail_f, fill=WHITE)
     apps = text_layer(T["cta_apps"], fit_font(F_REG, T["cta_apps"], 1000, 30, 22), SLATE)
     small = logo_layer(0.7)
+    if PROSPECT:
+        small = hstack([prospect_plate(0.95), text_layer("+", font(F_REG, 44), SLATE2), small], gap=24)
     scenes.append(render_card("cta", 7.0, bg, [
         {"img": ch, "x": (W - ch.width) / 2, "y": 190, "t0": 0.3, "fade": 0.8},
         {"img": pill, "x": (W - pill_w) / 2, "y": 300, "t0": 1.3, "fade": 0.8, "slide": 30},
         {"img": apps, "x": (W - apps.width) / 2, "y": 430, "t0": 2.6, "fade": 0.8},
-        {"img": small, "x": (W - small.width) / 2, "y": 560, "t0": 3.4, "fade": 0.8},
+        {"img": small, "x": (W - small.width) / 2, "y": 560 if not PROSPECT else 535, "t0": 3.4, "fade": 0.8},
     ]))
 
     # 8. Closing logo
     logo2 = logo_layer(1.5)
-    tag2 = text_layer(T["close_tag"], fit_font(F_REG, T["close_tag"], 1000, 40), SLATE)
+    if PROSPECT:
+        logo2 = hstack([prospect_plate(1.25), text_layer("+", font(F_REG, 56), SLATE2), logo_layer(1.15)], gap=28)
+    tag2 = text_layer(T["close_tag"], fit_font(F_BOLD if PROSPECT else F_REG, T["close_tag"], 1000, 40), WHITE if PROSPECT else SLATE)
     sub = text_layer(T["close_sub"], font(F_REG, 26), SLATE2)
     mail2 = text_layer(T["cta_mail"], font(F_BOLD, 28), EMERALD)
+    block_h = logo2.height + 36 + tag2.height + 22 + sub.height + 14 + mail2.height
+    y0 = (H - block_h) / 2
     scenes.append(render_card("close", 5.5, bg, [
-        {"img": logo2, "x": (W - logo2.width) / 2, "y": 220, "t0": 0.1, "fade": 0.9},
-        {"img": tag2, "x": (W - tag2.width) / 2, "y": 360, "t0": 0.7, "fade": 0.8},
-        {"img": sub, "x": (W - sub.width) / 2, "y": 430, "t0": 1.3, "fade": 0.8},
-        {"img": mail2, "x": (W - mail2.width) / 2, "y": 480, "t0": 1.9, "fade": 0.8},
+        {"img": logo2, "x": (W - logo2.width) / 2, "y": y0, "t0": 0.1, "fade": 0.9},
+        {"img": tag2, "x": (W - tag2.width) / 2, "y": y0 + logo2.height + 36, "t0": 0.7, "fade": 0.8},
+        {"img": sub, "x": (W - sub.width) / 2, "y": y0 + logo2.height + 36 + tag2.height + 22, "t0": 1.3, "fade": 0.8},
+        {"img": mail2, "x": (W - mail2.width) / 2, "y": y0 + logo2.height + 36 + tag2.height + 22 + sub.height + 14, "t0": 1.9, "fade": 0.8},
     ]))
     return scenes
 
@@ -542,7 +636,7 @@ def main():
     WORK.mkdir(parents=True, exist_ok=True)
     DIST.mkdir(parents=True, exist_ok=True)
     scenes = build_scenes()
-    out = DIST / f"GestPro-Promo-{LANG.upper()}.mp4"
+    out = DIST / f"GestPro-{OUT_SUFFIX}-{LANG.upper()}.mp4"
     total = assemble(scenes, out)
     print(f"wrote {out}  planned duration {total:.1f}s  size {out.stat().st_size / 1e6:.1f} MB")
 
