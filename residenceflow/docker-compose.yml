@@ -1,0 +1,40 @@
+# Local development stack: PostgreSQL, Redis (reserved for queue/rate-limit adapters), MinIO (S3-compatible) and the app.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: residenceflow
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-dev-password
+    ports: ["9000:9000", "9001:9001"]
+    profiles: ["storage"]
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/residenceflow
+      DIRECT_URL: postgresql://postgres:postgres@db:5432/residenceflow
+      AUTH_SECRET: change-me-in-real-deployments
+      CRON_SECRET: change-me-too
+      APP_BASE_URL: http://localhost:3000
+    ports: ["3000:3000"]
+    profiles: ["app"]
+volumes:
+  pgdata:
