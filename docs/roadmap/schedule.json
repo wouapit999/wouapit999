@@ -1,0 +1,41 @@
+{
+  "program": "BI-Rem",
+  "programStart": "2026-11-16",
+  "weekLengthDays": 7,
+  "phases": [
+    { "id": 1,  "key": "foundation",            "name": "Foundation & Platform Setup",        "start": "2026-11-16", "end": "2026-12-25", "weeks": 6,  "team": "core",       "dependsOn": [] },
+    { "id": 2,  "key": "customer-kyc",          "name": "Customer Management & KYC",          "start": "2026-12-28", "end": "2027-02-19", "weeks": 8,  "team": "core",       "dependsOn": [1] },
+    { "id": 3,  "key": "connectivity",          "name": "Connectivity Management Framework",  "start": "2027-01-25", "end": "2027-03-05", "weeks": 6,  "team": "platform",   "dependsOn": [1] },
+    { "id": 4,  "key": "wallet-connectors",     "name": "Wallet Connector Engine",            "start": "2027-03-08", "end": "2027-04-30", "weeks": 8,  "team": "platform",   "dependsOn": [3] },
+    { "id": 5,  "key": "domestic-transfers",    "name": "Domestic Transfers",                 "start": "2027-04-19", "end": "2027-05-28", "weeks": 6,  "team": "core",       "dependsOn": [2, 4] },
+    { "id": 6,  "key": "international",         "name": "International Remittance",           "start": "2027-05-31", "end": "2027-07-23", "weeks": 8,  "team": "core",       "dependsOn": [5] },
+    { "id": 7,  "key": "fx-treasury",           "name": "FX & Treasury Management",           "start": "2027-06-28", "end": "2027-08-06", "weeks": 6,  "team": "platform",   "dependsOn": [5] },
+    { "id": 8,  "key": "aml-compliance",        "name": "AML, Fraud & Compliance",            "start": "2027-07-26", "end": "2027-09-17", "weeks": 8,  "team": "compliance", "dependsOn": [2, 6] },
+    { "id": 9,  "key": "partner-merchant",      "name": "Partner & Merchant Portal",          "start": "2027-08-23", "end": "2027-10-01", "weeks": 6,  "team": "core",       "dependsOn": [5, 7] },
+    { "id": 10, "key": "reporting-bi",          "name": "Reporting & Business Intelligence",  "start": "2027-09-20", "end": "2027-10-29", "weeks": 6,  "team": "platform",   "dependsOn": [6, 7, 8] },
+    { "id": 11, "key": "mobile",                "name": "Mobile Applications",                "start": "2027-08-09", "end": "2027-10-15", "weeks": 10, "team": "mobile",     "dependsOn": [2, 5, 6] },
+    { "id": 12, "key": "go-live",               "name": "Production Go-Live",                 "start": "2027-11-01", "end": "2027-12-10", "weeks": 6,  "team": "all",        "dependsOn": [8, 9, 10, 11] },
+    { "id": 13, "key": "pan-african-expansion", "name": "Pan-African Expansion",              "start": "2028-01-03", "end": "2028-06-30", "weeks": 26, "team": "all",        "dependsOn": [12] }
+  ],
+  "team": {
+    "programManager": 1,
+    "solutionArchitect": 1,
+    "backendEngineers": 4,
+    "frontendEngineers": 3,
+    "mobileEngineers": 2,
+    "qaEngineers": 2,
+    "devopsSre": 1,
+    "complianceAnalyst": 1,
+    "productDesigner": 1,
+    "securityEngineerPartTime": 0.5
+  },
+  "targetScale": {
+    "users": 1000000,
+    "transactionsPerDay": 100000,
+    "providers": 50,
+    "countries": 20,
+    "availability": "99.9%",
+    "rpoMinutes": 15,
+    "rtoMinutes": 60
+  }
+}
