@@ -99,7 +99,7 @@ gantt
   M1.4 Portals on Vercel                :m4, 2026-12-07, 2026-12-12
   section Operate
   M1.5 Notifications observability tests :m5, 2026-12-14, 2026-12-19
-  M1.6 Hardening and exit gate          :m6, 2026-12-21, 2026-12-26
+  M1.6 Hardening and exit gate          :m6, 2026-12-21, 2026-12-25
 ```
 
 ---

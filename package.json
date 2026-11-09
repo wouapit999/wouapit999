@@ -2,7 +2,7 @@
   "name": "bi-rem",
   "version": "0.1.0",
   "private": true,
-  "description": "BI-Rem \u2014 pan-African remittance and mobile-money platform (monorepo)",
+  "description": "BI-Rem — pan-African remittance and mobile-money platform (monorepo)",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22.12.0",
@@ -24,6 +24,7 @@
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^12.2.0",
     "prettier": "^3.9.10",
     "turbo": "^2.11.10",
     "typescript": "^5.9.3"
