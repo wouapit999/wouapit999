@@ -1,14 +1,14 @@
 # Phase 6 — International Remittance
 
-| Field                     | Value                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase**                 | 6 of 13 — `international`                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Dates**                 | 2027-05-31 → 2027-07-23                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **Duration**              | 8 weeks (W1 = 2027-05-31, W8 = 2027-07-19 … 2027-07-23)                                                                                                                                                                                                                                                                                                                                                                   |
-| **Team**                  | `core` (3 backend, 2 frontend, 1 QA, solution architect, PM, compliance analyst at ~75 %; DevOps/SRE and 0.5 security engineer shared; product designer W1–W5; 1 mobile engineer for API contract review)                                                                                                                                                                                                                 |
-| **Depends on**            | Phase 5 — Domestic Transfers (ends 2027-05-28): `Transfer` aggregate and saga, double-entry ledger (`ledger_accounts` / `ledger_entries`), fee schedules, KYC-level limit enforcement, `WalletTransaction` legs (Phase 4), provider catalogue and credential store (Phase 3), customer profiles, beneficiaries and `KycLevelPolicy` (Phase 2)                                                                             |
-| **Unlocks**               | Phase 7 — FX & Treasury (starts 2027-06-28, overlapping our W5–W8; consumes `fx_rates`, `fx_quotes`, `nostro_accounts`), Phase 8 — AML, Fraud & Compliance (2027-07-26; consumes purpose/source-of-funds fields, corridor risk, regulatory reports), Phase 10 — Reporting & BI (2027-09-20), Phase 11 — Mobile (2027-08-09; consumes quote + tracking APIs), Phase 13 — Pan-African Expansion (corridor-by-configuration) |
-| **Runs in parallel with** | Phase 7 kick-off (platform team, from 2027-06-28 = our W5) — FX boundary agreed at M6.1                                                                                                                                                                                                                                                                                                                                   |
+| Field                     | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase**                 | 6 of 13 — `international`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Dates**                 | 2027-05-31 → 2027-07-23                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Duration**              | 8 weeks (W1 = 2027-05-31, W8 = 2027-07-19 … 2027-07-23)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Team**                  | `core` — 4 backend W1–W4 then 2 backend W5–W8 (two move to Phase 7 on 2027-06-28), 2 frontend, 1 QA W1–W2 + 2 QA W3–W4 + 1 QA W5–W8, solution architect, DevOps/SRE, program manager, compliance analyst, product designer (50 % from W5), 0.5 security engineer, 1 mobile engineer for API review (W6–W8); treasury ops lead and head of compliance as business owners                                                                                                                                                                              |
+| **Depends on**            | Phase 5 — Domestic Transfers (ended 2027-05-28): `Transfer` aggregate, `TransferSaga` step table with the `FX_CONVERT` / `COMPLIANCE_HOLD` slots, double-entry ledger (`LedgerService.post()` single-currency invariant with documented FX extension point), `FeeEngine` scopes, `LimitService`, receipts, notifications, `reconciliation_runs` / `reconciliation_breaks`. Transitively Phase 4 (`WalletTransaction` PUSH/PULL legs, `ProviderAccount` float wallets, connector SDK + simulator), Phase 3 (`Provider`/`Connection`, credential vault, static egress IPs, `worker` process group), Phase 2 (`CustomerProfile`, `KycLevelPolicy`, `Beneficiary`, `@RequiresRecentMfa`), Phase 1 (flags, settings, audit, outbox, BullMQ) |
+| **Unlocks**               | Phase 7 — FX & Treasury (2027-06-28, overlaps our W5–W8) replaces the Phase 6 `FxRateProvider` table implementation with its engine from M7.3 and takes over nostro monitoring/rebalancing; Phase 8 — AML/Fraud (2027-07-26) consumes `intl.transfer.*` events, `transfer_cross_border_details` (purpose, source of funds, snapshots), the `HELD` state and the `regulatory_reports` store; Phase 10 — Reporting (2027-09-20) reads `corridors`, `corridor_routes`, `transfer_tracking_events`, `settlement_batches`; Phase 11 — Mobile (2027-08-09) consumes `/v1/intl/*` and the tracking API; Phase 12 — Go-Live drives corridor stages through `CorridorService`; Phase 13 — Expansion adds countries as corridor configuration and extends `CrossBorderSaga` with `INTER_REGION_HANDOFF` |
+| **Runs in parallel with** | Phase 7 — FX & Treasury (platform team, from 2027-06-28)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ---
 
@@ -16,68 +16,68 @@
 
 ### 1.1 Objective
 
-Phase 6 makes BI-Rem a **cross-border** remittance platform. A customer in one supported country sends money in their currency; the recipient in another supported country receives it in theirs, into a mobile-money wallet on _any_ network or into a bank account, with the exchange rate applied automatically and **locked at quote time**. The phase delivers the corridor configuration model (which country pairs, which payout rails, which limits, which partner), a first-generation FX quote engine with rate-validity windows, pre-funded **nostro / float accounts per corridor** with liquidity checks at quote time, the cross-border transfer saga on top of Phase 5's `Transfer` + ledger and Phase 4's `WalletTransaction` legs, customer-facing **transfer tracking**, daily **settlement files** exchanged with payout partners, a **reconciliation** engine with a break workflow, and the **regulatory reporting fields** (purpose of transfer, source of funds, sender/recipient identity snapshot) plus report generators for BEAC and the other central banks in scope.
+Phase 6 turns BI-Rem from a domestic wallet into a **cross-border remittance platform**. A customer in one supported country sends money in their own currency; the recipient in another supported country receives it in theirs — into a mobile-money wallet on *any* network or into a bank account — with the exchange rate applied automatically, shown before confirmation and **locked for a validity window**. The phase delivers the corridor configuration model (which country pairs, which payout rails and partners, which limits, which regulator and licence basis), a first-generation FX rate table and quote-locking service behind a stable `FxRateProvider` interface that Phase 7 later implements with its engine, a cross-border saga on top of the Phase 5 transfer saga, pre-funded nostro accounts per payout currency and partner, daily settlement files, three-way reconciliation, the regulatory data capture that CEMAC (BEAC/COBAC), BNA, Banco de Moçambique, BCV, BCEAO and BCSTP expect, and the customer-facing transfer tracking that both portals and the Phase 11 mobile app consume.
 
-Launch footprint: the **CEMAC** zone (Cameroon `CM`, Gabon `GA`, Chad `TD`, Congo-Brazzaville `CG`, Central African Republic `CF`, Equatorial Guinea `GQ` — all `XAF`) and the Portuguese-speaking **PALOP** markets plus Guinea-Bissau: Angola `AO` (`AOA`), Mozambique `MZ` (`MZN`), Cape Verde `CV` (`CVE`), Guinea-Bissau `GW` (`XOF`), São Tomé and Príncipe `ST` (`STN`). All eleven countries and six currencies already exist in `packages/shared/src/constants/countries.ts` and `currencies.ts` (XAF/XOF exponent 0, the others exponent 2), so no reference-data migration is needed for them.
+Launch footprint: the **CEMAC** zone — Cameroon `CM`, Gabon `GA`, Chad `TD`, Congo-Brazzaville `CG`, Central African Republic `CF`, Equatorial Guinea `GQ` — all `XAF`; and the Portuguese-speaking markets plus Guinea-Bissau — Angola `AO` (`AOA`), Mozambique `MZ` (`MZN`), Cape Verde `CV` (`CVE`), Guinea-Bissau `GW` (`XOF`), São Tomé and Príncipe `ST` (`STN`). All eleven countries and six currencies already exist in `packages/shared/src/constants/countries.ts` (`CEMAC_COUNTRY_CODES`, `PALOP_COUNTRY_CODES`) and `currencies.ts` (XAF/XOF exponent 0; AOA/MZN/CVE/STN exponent 2), so no shared-constant change is needed to describe the footprint.
 
-Two success criteria drive every milestone: **(1) a user can send money between supported countries** and **(2) the exchange rate is applied automatically** — meaning the customer sees send amount, fee, rate and receive amount before confirming, the rate is honoured for the lock window, and the ledger, the payout leg and the settlement file all carry the same locked rate.
+The two success criteria of the brief drive every milestone: **(1) a user can send money between supported countries** and **(2) the exchange rate is applied automatically** — the customer sees send amount, fee, rate and receive amount before confirming, the rate is honoured for the lock window, and the ledger, the payout leg, the settlement file and the regulatory report all carry the same locked rate.
 
 ### 1.2 In scope
 
-| Area                          | Included                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Corridor configuration        | `Corridor` = ordered pair (send country, receive country) with send/receive currency, status (`DRAFT → SANDBOX → FRIENDS_FAMILY → LIVE → PAUSED → RETIRED`), per-corridor limits (single, daily, monthly, in send currency, intersected with the sender's `KycLevelPolicy`), fee schedule reference, FX markup (bps), quote lock seconds, cut-off / value-date rules, required compliance fields, regulator and licence basis, partner model. `CorridorRoute` = ordered list of payout rails per corridor × beneficiary type (`MOBILE_MONEY`, `BANK_ACCOUNT`) with priority, weight and health-based fallback. Domestic corridors (`cm-cm`, …) are modelled as corridors too so Phase 5's engine and Phase 6's share one routing path.                                                                                                          |
-| Cross-Currency Transfers      | Send `XAF`, receive `AOA`, `MZN`, `CVE`, `XOF` or `STN` (and the reverse where the partner model allows); send-side funding by Phase 5 mechanisms (wallet pull / BI-Rem balance); FX booked at the locked quote; two-currency ledger postings through a corridor **FX position account**; receive amount guaranteed to the customer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Cross-Network Transfers       | Sender on MTN MoMo Cameroon → recipient on Airtel Money Gabon or Moov Money Chad; sender wallet → recipient bank account (Cape Verde, São Tomé) via aggregator/bank partner; routing engine picks the payout `Provider` from `CorridorRoute`, falls back on circuit-open or `ConnectorUnavailableError`. Same-currency intra-CEMAC corridors (`XAF → XAF`) are cross-border, cross-network, **no FX** — still subject to corridor limits and BEAC reporting fields.                                                                                                                                                                                                                                                                                                                                                                             |
-| FX Conversion                 | `FxRateProvider` interface + two implementations in Phase 6: `PeggedRateProvider` (fixed parities: `EUR/XAF = 655.957`, `EUR/XOF = 655.957`, `EUR/CVE = 110.265`, `EUR/STN = 24.50`) and `MarketRateProvider` (HTTP feed for `AOA`, `MZN`, `USD`, `EUR`; one vendor in Phase 6, configurable). Rate ingestion every 60 s into `fx_rates` (mid, bid/ask when given, source, `capturedAt`); `FxQuote` = customer-facing rate = mid × (1 − markup) with a `lockedUntil` validity window (default 120 s for customers, 900 s for admin-initiated); quote is bound to exactly one transfer; stale-rate and tolerance guards; **shadow mode** in production before any customer sees a rate. Treasury-grade features (multi-source aggregation, hedging, position limits, rebalancing automation) are Phase 7.                                        |
-| Transfer Tracking             | Public, non-guessable tracking reference (`BIR-` + 8 Crockford base32 chars) on every cross-border transfer; `TransferTrackingEvent` customer-facing timeline (`QUOTED → FUNDING → FUNDED → FX_BOOKED → PAYOUT_PENDING → PAID_OUT`, plus `HELD`, `REFUNDING`, `REFUNDED`, `FAILED`); sender endpoints and a signed recipient tracking link sent by SMS (no login needed, masked data); notifications in `en`, `fr`, `pt` to sender **and** recipient at `PAYOUT_PENDING`, `PAID_OUT`, `FAILED`, `REFUNDED`.                                                                                                                                                                                                                                                                                                                                     |
-| Pre-funding / nostro          | `NostroAccount` per corridor payout currency and partner: links a Phase 5 ledger account (asset, `currency`), one or more Phase 4 `ProviderAccount` float wallets and/or a partner bank account; projected available liquidity = ledger balance − reserved quotes − in-flight payouts; quote refused (`CORRIDOR_LIQUIDITY_LOW`) when below the reserve; `PrefundingInstruction` records top-ups (bank wire / float transfer) with maker-checker and expected vs received amounts; low-liquidity alerts feed Phase 7.                                                                                                                                                                                                                                                                                                                            |
-| Settlement files              | Daily `SettlementBatch` per partner and currency (cut-off per corridor, e.g. 16:00 WAT for CEMAC partners, 15:00 WAT for Luanda): outbound **payout instruction file** (CSV, with optional ISO 20022 `pain.001` rendering for bank partners) and **settlement statement** (what BI-Rem owes / is owed), delivered via SFTP (BI-Rem pulls/pushes from the Phase 4 static egress IPs); inbound partner statements ingested from SFTP or from Phase 4 `getStatement`; file hash, line counts and control totals stored.                                                                                                                                                                                                                                                                                                                            |
-| Transfer Reconciliation       | Nightly (and on-demand) three-way reconciliation: ledger entries ↔ `WalletTransaction` legs ↔ partner statement lines, per `NostroAccount` and value date; automatic matching by `externalReference` / `providerTransactionId` / amount+date tolerance; `ReconciliationBreak` classification (`MISSING_AT_PARTNER`, `MISSING_IN_LEDGER`, `AMOUNT_MISMATCH`, `FX_MISMATCH`, `STATUS_MISMATCH`, `DUPLICATE`, `FEE_MISMATCH`); break workflow with evidence, four-eyes resolution and adjusting ledger entries; recon dashboard.                                                                                                                                                                                                                                                                                                                   |
-| Regulatory fields & reporting | Mandatory `purposeCode` (ISO 20022 ExternalPurpose1Code subset mapped to each regulator's nomenclature) and `sourceOfFundsCode` on every cross-border transfer; sender identity snapshot (ID type, last 4, nationality, KYC level) and recipient details captured at transfer time (immutable); relationship to recipient; `RegulatoryReport` generators: BEAC FX-transfer declaration (per Règlement 02/18/CEMAC/UMAC/CM), BNA inbound remittance report (Angola), Banco de Moçambique remittance report, BCEAO (via Guinea-Bissau partner) statement, BCV and BCSTP partner statements — generated as CSV/XML into the Phase 2 S3-compatible document store, downloadable from the admin portal, with the exact column layouts confirmed with the sponsor bank/partner (open question Q6.2). Suspicious-activity reporting itself is Phase 8. |
-| Licensing / partner model     | Documented per country (§8.4) and encoded on the `Corridor` row (`licenceBasis`, `partnerModel`, `regulatorCode`): BI-Rem operates as **principal** where licensed, otherwise as **agent of a licensed partner** (sponsor bank / EMI / aggregator); payout partner contract reference stored on `CorridorRoute`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Portals                       | Admin: corridor console (matrix, routes, limits, flags), FX console (rates, markups, quotes, freeze), nostro & pre-funding, settlement files, reconciliation breaks, regulatory reports, cross-border transfer explorer. Customer: send-international flow (country → beneficiary → amount with live quote and countdown → purpose/source of funds → review → confirm), tracking timeline, recipient tracking page.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Area                              | Included                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Corridor configuration**        | `Corridor` = ordered pair (send country, receive country) with send/receive currency, key `<send>-<recv>` (e.g. `cm-ga`), status machine `DRAFT → SANDBOX → FRIENDS_FAMILY → LIVE → PAUSED → RETIRED`, per-corridor limits (single, daily, monthly in send currency, intersected with the sender's Phase 2 `KycLevelPolicy`), fee schedule reference (Phase 5 `FeeEngine` scope `corridorKey`), FX markup in bps, quote lock seconds and grace seconds, cut-off time and value-date rules, required regulatory fields, manual-review rules (`compliance_rules` JSON), regulator code, licence basis and partner model. `CorridorRoute` = ordered payout options per corridor (Phase 3 `Provider`, rail, nostro account, priority, caps, health gate) with automatic fallback.                                                                                                                                                                                                                     |
+| **Cross-Currency Transfers**      | Send `XAF`, receive `AOA`, `MZN`, `CVE`, `XOF` or `STN` (and the reverse where the partner model allows); funding by Phase 5 mechanisms (BI-Rem wallet balance, or wallet pull via Phase 4 `PULL` leg); FX booked at the locked quote through two linked single-currency journals and per-currency `FX_POSITION` clearing accounts; receive amount guaranteed to the customer; refund of principal **and** fee on failure (Q6.7 default).                                                                                                                                                                                                                                                                                                 |
+| **Cross-Network Transfers**       | Sender on MTN MoMo Cameroon → recipient on Airtel Money Gabon or Moov Money Chad; sender wallet → recipient bank account in Cape Verde or São Tomé via an aggregator/bank partner; the routing engine picks the payout `Provider` from `corridor_routes`, honours Phase 4 per-provider kill switches and circuit state, and falls back to the next route. Intra-CEMAC `XAF → XAF` corridors are cross-border and cross-network with **no FX**, still subject to corridor limits, purpose capture and BEAC statistics.                                                                                                                                                                                                                                                                      |
+| **FX Conversion**                 | `FxRateProvider` interface (`getRate(pair, options)` → mid, bid/ask when available, source, `capturedAt`, `maxAgeSeconds`) with three Phase 6 implementations: `PeggedRateProvider` (EUR parities held in `Setting`: `EUR/XAF = 655.957`, `EUR/XOF = 655.957`, `EUR/CVE = 110.265`, `EUR/STN = 24.50`), `MarketRateProvider` (one commercial FX data vendor for `AOA`, `MZN`, `USD`, `EUR`; 60 s polling into `fx_rates` + Redis), `ManualRateProvider` (treasury-entered rate under four-eyes, used when the vendor is stale or for partner-quoted rates). Customer rate = mid × (1 − markup bps); quote locked for the corridor's window; staleness and deviation guards; `intl.fx.freeze` kill switch; shadow mode. Phase 7 plugs its engine in behind the same interface. |
+| **Transfer Tracking**             | Non-guessable tracking reference `BIR-` + 8 Crockford base32 on every cross-border transfer; append-only `transfer_tracking_events` timeline (`QUOTE_LOCKED → TRANSFER_CREATED → FUNDED → FX_LOCKED → PAYOUT_SUBMITTED → PAYOUT_CONFIRMED`, plus `HELD`, `RELEASED`, `PAYOUT_FAILED`, `REFUND_INITIATED`, `REFUNDED`, `CANCELLED`); sender endpoints and a signed recipient tracking link (no login, masked data, 7-day token) sent by SMS; notifications in `en`, `fr`, `pt` to sender **and** recipient; ETA per corridor SLA; `nextAction` semantics compatible with the Phase 5 transfer API used by Phase 11.                                                                                                                                                                                 |
+| **Pre-funding / nostro accounts** | `NostroAccount` per payout currency and partner (`nostro_accounts`): linked Phase 5 ledger asset account `ASSET:NOSTRO:<key>:<ccy>`, zero or more Phase 4 `ProviderAccount` float wallets and/or a partner bank account (encrypted reference); available liquidity = ledger balance − active reservations − in-flight payouts; a quote is refused with `CORRIDOR_LIQUIDITY_LOW` below the minimum reserve; `PrefundingInstruction` records top-ups (bank wire or float transfer) with maker-checker and expected vs received reconciliation; liquidity-low alerts to treasury ops.                                                                                                                                                                                         |
+| **Settlement files**              | Daily `SettlementBatch` per nostro account and value date (cut-off per corridor, e.g. 16:00 WAT for CEMAC partners, 15:00 WAT for Luanda): outbound **payout instruction file** (CSV, optional ISO 20022 `pain.001.001.09` rendering for bank partners) and **settlement statement** (what BI-Rem owes / is owed, in both currencies at locked rates); delivery over SFTP from the Phase 3 static egress IPs; inbound partner statements ingested from SFTP, from Phase 4 `getStatement` or by manual upload; file hash, versioning, S3 Object Lock, line-level persistence.                                                                                                                                                                                                      |
+| **Transfer Reconciliation**       | Nightly and on-demand three-way reconciliation per nostro and value date: ledger entries ↔ Phase 4 `WalletTransaction` legs ↔ partner statement lines; matching by `externalReference` / provider transaction id, then by amount + value-date tolerance; Phase 5 `ReconBreakKind` extended with `MISSING_AT_PARTNER`, `MISSING_IN_LEDGER`, `AMOUNT_MISMATCH`, `FX_MISMATCH`, `STATUS_MISMATCH`, `DUPLICATE`, `FEE_MISMATCH`; break workflow reuses Phase 5 `/v1/recon/*` with evidence and four-eyes above threshold; match-rate SLO ≥ 99.5 %.                                                                                                                                                                                                                        |
+| **Regulatory fields & reporting** | Mandatory `purposeCode`, `sourceOfFundsCode` and `relationshipCode` from a versioned `regulatory_codes` catalogue (mapped to ISO 20022 `ExternalPurpose1Code` where one exists and to each regulator's nomenclature); immutable sender identity snapshot (ID type, last 4, nationality, KYC level, residence country) and recipient snapshot at transfer time; `regulatory_reports` store with table-driven generators: BEAC FX-transfer declaration file and monthly transfer statistics (Règlement n°02/18/CEMAC/UMAC/CM and its application instructions), BNA inbound remittance return, Banco de Moçambique inbound return, BCV / BCEAO / BCSTP inbound returns — all delivered through the licensed partner where BI-Rem is an agent.                                        |
+| **Licensing / partner model**     | Per-country model (§8.4) encoded on the `Corridor` (`licenceBasis`, `regulatorCode`, `partnerProviderId`) and `CorridorRoute` (`contractRef`): BI-Rem operates as **principal** where licensed, otherwise as **agent of a licensed partner** (COBAC payment institution / EMI, sponsor bank, BNA- or BM-licensed EMI, aggregator → licensed bank). Intra-CEMAC flows route through the sponsor EMI's GIMAC membership (BEAC requires intra-CEMAC e-money interoperability through GIMAC).                                                                                                                                                                                                                                                                      |
+| **Portals**                       | Admin: corridor console (matrix, detail, routes, limits, status workflow), FX console (rates, sources, markups, manual rate, freeze), nostro & pre-funding, settlement batches/files, reconciliation (Phase 5 screens extended), regulatory reports, cross-border transfer explorer with hold/release/refund. Customer: send-international flow (country → beneficiary → amount with live quote and countdown → purpose / source of funds / relationship → review → MFA → confirm), tracking timeline, recipient tracking page (`/track/<token>`), receipts.                                                                                                                                                                                                                |
 
 ### 1.3 Out of scope (explicitly deferred)
 
-- **Treasury management**: multi-source rate aggregation, hedging, FX position limits and P&L, automated nostro rebalancing, liquidity forecasting — **Phase 7** (we hand over `fx_rates`, `fx_quotes`, `nostro_accounts`, `prefunding_instructions` and the `FxRateProvider` interface).
-- **AML screening and transaction monitoring** on cross-border flows (sanctions screening of recipients, velocity across corridors, STR filing to ANIF/UIF/GIFiM) — **Phase 8**. Phase 6 captures every field Phase 8 needs and emits `intl.transfer.*` events; the only Phase 6 compliance gate is `HELD` for operator review when a corridor's `requiresManualReview` rule fires (amount above threshold, first transfer to a new recipient country, mismatched purpose/relationship).
-- Outbound transfers **from** Angola and Mozambique (AOA/MZN are not freely convertible; outbound requires BNA/BM FX approval flows) — modelled as corridors in `DRAFT`, not activated. Cape Verde, Guinea-Bissau and São Tomé send-side likewise start as receive-only.
-- Cash pick-up payout (`ConnectorKind.CASH_AGENT`) and card funding — Phase 9/13.
-- GIMAC (CEMAC interbank switch) direct participation — intra-CEMAC corridors run as pre-funded payouts through partner EMIs/aggregator in Phase 6; a GIMACPAY route is a Phase 13 option (Q6.6).
-- Native mobile screens — Phase 11 consumes the quote and tracking APIs; Phase 6 supplies OpenAPI examples and the recipient web tracking page which is mobile-responsive.
-- Bulk / business remittances and partner-initiated transfers — Phase 9.
+- **Treasury management** — multi-source rate composition, margin schedules by segment, hedging, P&L, automated rebalancing, liquidity forecasting: **Phase 7**. Phase 6 hands over `FxRateProvider`, `fx_rate_sources`, `fx_rates`, `intl_quotes`, `nostro_accounts`, `nostro_reservations`, `prefunding_instructions`.
+- **AML screening and transaction monitoring** on cross-border flows (sanctions screening, velocity across corridors, travel-rule payloads, STR filing to ANIF / UIF / GIFiM): **Phase 8**. Phase 6 captures every field Phase 8 needs and emits `intl.transfer.*`; its only compliance gate is `HELD` for operator review when a corridor `compliance_rules` rule fires.
+- **Outbound transfers from Angola and Mozambique** (AOA/MZN are not freely convertible; outbound needs BNA / BM approval flows) — modelled as corridors in `DRAFT`, never activated in this phase. CV, GW, ST send-side also start receive-only.
+- Cash pick-up payout, card funding, bulk/business remittances, partner-initiated payouts — Phases 9 and 13.
+- Direct GIMAC participation — intra-CEMAC corridors run as pre-funded payouts through partner EMIs/aggregator; direct participation is a Phase 13 option (Q6.6).
+- Native mobile screens — Phase 11 consumes the APIs; Phase 6 provides OpenAPI examples and a mobile-responsive recipient tracking page.
 
 ### 1.4 Independent deployability strategy
 
-"Deployable alone" for Phase 6 means: **the whole phase merges to `main` and deploys to production behind flags with every corridor `DRAFT` or `SANDBOX`, FX rates being ingested and quotes computed in shadow mode (logged, never shown), nostro ledger accounts created at zero, settlement and reconciliation jobs running against staging SFTP only, no customer able to see "Send internationally", and every piece switchable off within 30 seconds without a redeploy. Domestic transfers (Phase 5) must be provably unaffected: their saga path is unchanged except for the new nullable `transfers.corridor_id` they start populating.**
+"Deployable alone" for Phase 6 means: **the whole phase merges to `main` and deploys to production behind flags with every corridor `DRAFT` or `SANDBOX`; FX rates are ingested and quotes computed in shadow mode (logged, never shown); nostro ledger accounts exist at zero; settlement and reconciliation jobs run against staging SFTP only; no customer can see "Send internationally"; and every piece switches off within 30 seconds without a redeploy. Domestic transfers (Phase 5) must behave identically with Phase 6 deployed and dark.**
 
-| Mechanism                                                                                   | How it is used in Phase 6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Feature flags** (Phase 1 `FeatureFlag`, Redis-cached 30 s, `rules` + `rolloutPercentage`) | `intl.enabled` (master: quote and transfer creation refused with HTTP 503 `INTL_DISABLED` when off; in-flight transfers continue to payout); `intl.corridor.<send>-<recv>.enabled` (corridor visible, quoting allowed) and `intl.corridor.<send>-<recv>.live` (real money; `rules` carry the friends-and-family user list and `rolloutPercentage` the canary); `intl.fx.quote-engine` (shadow vs served), `intl.fx.freeze` (stop issuing new quotes, honour locked ones), `intl.fx.source.market` (use market feed vs last-good), `intl.routing.fallback` (allow secondary route), `intl.settlement.auto-generate`, `intl.settlement.auto-deliver` (write to partner SFTP vs staging bucket), `intl.recon.auto-match`, `intl.tracking.public-link`, `intl.reports.auto-generate`, `portal.send-international`, `admin.intl.console`. Keys registered in `packages/shared/src/constants/feature-flags.ts`; corridor keys are validated against the pattern `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$` already enforced by `FEATURE_FLAG_KEY_PATTERN`. |
-| **Expand → migrate → contract**                                                             | All Phase 6 migrations are expand-only: 16 new tables, 11 new enums, 1 enum value added (`ConnectorKind.AGGREGATOR`), 3 nullable columns on Phase 5 `transfers` (`corridor_id`, `fx_quote_id`, `tracking_ref`) and 1 nullable column on Phase 2 `beneficiaries` (`bank_account_country_code`). Backfill: a domestic `Corridor` row per Phase 5 live country, `transfers.corridor_id` filled for existing domestic transfers (batched, idempotent). The only **contract** — `transfers.corridor_id SET NOT NULL` — runs in **Phase 9 W1 (2027-08-23)**, the core team's next migration slot, after a Neon snapshot.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **Dark launch**                                                                             | From W4 (M6.4) production ingests FX rates every 60 s and computes shadow quotes for synthetic requests; from W5 production generates settlement files to a staging bucket (`intl.settlement.auto-deliver=false`) and runs reconciliation against partner UAT statements; from W6 the `CM→GA` corridor is `FRIENDS_FAMILY` with a hard cap (`XAF 50,000` per transfer, 20 named users).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **Kill switches**                                                                           | `intl.enabled=false` → `POST /v1/intl/quotes` and `POST /v1/intl/transfers` return 503, workers finish in-flight payouts; `intl.fx.freeze=true` → `FX_FROZEN` on new quotes, existing locks honoured; corridor `PAUSED` → quoting refused, transfers at `FUNDED` park (`HELD`, reason `CORRIDOR_PAUSED`) until resume or refund; per-provider kill switches from Phase 4 (`wallet.connector.<key>.live`) still apply underneath; stale-rate guard auto-freezes a currency pair when the last good rate is older than `fxMaxRateAgeSeconds` (default 300 s).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Worker isolation**                                                                        | New BullMQ queues `intl:saga`, `intl:fx-ingest`, `intl:payout-dispatch`, `intl:settlement`, `intl:recon`, `intl:reports`, `intl:notify` (each with `*:dlq`) run only in the Phase 3 `worker` process group (`WORKER_QUEUES`); the `http` group only reads rates from Redis for quoting (≤ 5 ms) and never calls a payout provider synchronously.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **Backward-compatible APIs**                                                                | New paths under `/v1/intl/*`, `/v1/corridors`, `/v1/track/*`; Phase 5 `/v1/transfers/*` responses gain optional fields only (`corridor`, `fxQuote`, `trackingRef`). Zod schemas in `@bi-rem/shared` are additive (`.optional()`), portals tolerate absence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Data isolation**                                                                          | Cross-border detail lives in `transfer_cross_border_details` (1:1), not in new NOT NULL columns on `transfers`, so a rollback of the API image leaves Phase 5 fully functional on the expanded schema.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Mechanism                                                                               | How it is used in Phase 6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Feature flags** (Phase 1 `FeatureFlag`, Redis-cached 30 s, `rules` + `rolloutPercentage`) | `intl.enabled` (master: `POST /v1/intl/quotes` and `POST /v1/intl/transfers` return 503 `INTL_DISABLED` when off; in-flight transfers continue); `intl.corridor.<send>-<recv>.enabled` (visible, quoting allowed) and `intl.corridor.<send>-<recv>.live` (real money; `rules` carry the friends-and-family user list, `rolloutPercentage` the canary bucket via `rolloutBucket(flagKey, userId)`); `intl.fx.quote-engine` (`shadow` vs `served`); `intl.fx.freeze`; `intl.fx.source.<key>.enabled`; `intl.routing.fallback`; `intl.tracking.public-link`; `intl.settlement.auto-generate`, `intl.settlement.auto-deliver`; `intl.recon.auto-match`; `intl.reports.auto-generate`; `admin.intl.console`; `portal.send-international`. |
+| **Expand → migrate → contract**                                                         | One expand migration in W1 (`20270531090000_phase6_expand`): 17 new tables, 14 new enums, enum value additions (`TransferType.CROSS_BORDER`, `TransferStatus.HELD`, seven `ReconBreakKind` values, `ConnectorKind.AGGREGATOR`, `AuthScheme.SSH_KEY`), nullable columns on `transfers` (`corridor_id`, `intl_quote_id`, `tracking_ref`), `beneficiaries` (`bank_bic`), `ledger_journals` (`fx_pair_journal_id`), `reconciliation_runs` (`nostro_account_id`), `reconciliation_breaks` (`nostro_account_id`, `settlement_file_line_id`). Backfill: one domestic `Corridor` row per Phase 5 live country, `transfers.corridor_id` filled in batches. Contract (`corridor_id SET NOT NULL`) is deferred to Phase 9's W1 slot (2027-08-23) as agreed in the Phase 9 plan. |
+| **Dark launch**                                                                         | From W4 (M6.4) production ingests FX rates every 60 s and computes shadow quotes for synthetic requests; from W5 production generates settlement files into a staging bucket (`intl.settlement.auto-deliver=false`) and reconciles partner UAT statements; from W6 the `CM→GA` corridor is `FRIENDS_FAMILY` with a hard cap (`XAF 50,000` per transfer, 20 named users).                                                                                                                                                                                                                                                                 |
+| **Kill switches**                                                                       | `intl.enabled=false` → quotes and confirmations 503, workers finish in-flight payouts; `intl.fx.freeze=true` → new quotes refused with `FX_FROZEN`, existing locks honoured; corridor `PAUSED` → quoting refused and transfers at `FUNDED`/`FX_LOCKED` park as `HELD` (`CORRIDOR_PAUSED`) until resume or refund; Phase 4 `wallet.connector.<key>.live=false` removes a payout route (fallback takes over); `intl.settlement.auto-deliver=false` stops SFTP pushes within one scheduler tick.                                                                                                                                                 |
+| **Worker isolation**                                                                    | New BullMQ queues `intl:saga`, `intl:fx-ingest`, `intl:payout-dispatch`, `intl:settlement`, `intl:recon`, `intl:reports`, `intl:notify` (each with `:dlq`) run only in the Phase 3 `worker` process group (`WORKER_QUEUES=intl:*,transfer:*,receipts,recon,wallet:*,notifications,outbox-relay`); the `http` group reads rates from Redis for quoting (≤ 5 ms) and never calls a payout provider or SFTP synchronously.                                                                                                                                                                                                                 |
+| **Backward-compatible APIs**                                                            | New paths `/v1/intl/*`, `/v1/corridors*`, `/v1/fx/*`, `/v1/nostro/*`, `/v1/settlement/*`, `/v1/regulatory-reports*`, `/v1/track/:token`; Phase 5 `/v1/transfers/*` responses gain optional fields only (`corridorKey`, `trackingRef`, `crossBorder`). Zod schemas in `@bi-rem/shared` are additive (`.optional()`); portals tolerate absence.                                                                                                                                                                                                                                                                                             |
+| **Data isolation**                                                                      | Cross-border detail lives in `transfer_cross_border_details` (1:1 with `transfers`), not in NOT NULL columns on `transfers`, so rolling back the API image leaves Phase 5 fully functional on the expanded schema.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Rollback**                                                                            | Flags first (seconds); corridor `PAUSED` (seconds); Fly image rollback by digest (`infra/scripts/rollback-api.sh`) and Vercel instant rollback (minutes); migrations are forward-fix only once any cross-border transfer exists (ledger rows are never deleted).                                                                                                                                                                                                                                                                                                                                                                  |
 
 ---
 
 ## 2. Milestones
 
-Phase start is Monday **2027-05-31**; week _n_ runs Monday to Friday, milestone dates are the Friday of the week. Phase 7 (platform team) starts on Monday 2027-06-28 (our W5).
+Phase start is Monday **2027-05-31**; week *n* runs Monday to Friday; milestone dates are the Friday of the week. Phase 7 (platform team) starts Monday 2027-06-28 (our W5) and its M7.3 (2027-07-16, our W7) is the earliest point its engine can serve a Phase 6 corridor on staging.
 
-| ID       | Week | Target date | Deliverable                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Owner                         |
-| -------- | ---- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| **M6.1** | W1   | 2027-06-04  | Design freeze: corridor + routing model, `FxRateProvider` interface, quote-lock semantics, nostro ledger account plan, saga states; ADR-0018 (corridor & routing), ADR-0019 (FX quote locking & shadow mode), ADR-0020 (settlement & reconciliation); schema v6 _expand_ migration merged; licensing/partner matrix v1 (§8.4) reviewed by compliance; market-rate vendor, aggregator and partner SFTP sandbox accounts requested; FX boundary agreed with Phase 7 lead | `pnpm db:migrate:dev` applies `20270531090000_phase6_expand` on a Phase 5 database and Phase 5 e2e suite stays green; `packages/shared/src/schemas/intl.ts` compiles with Zod DTOs for quote, transfer, tracking; ADRs accepted at Thursday architecture review; partner matrix has an owner and a date per country                                                                                                                                                                      | Solution Architect            |
-| **M6.2** | W2   | 2027-06-11  | Corridor configuration service + admin API; routing engine with fallback; FX ingestion (`PeggedRateProvider`, `MarketRateProvider`) into `fx_rates` + Redis; quote API with lock window; domestic corridor backfill job                                                                                                                                                                                                                                                | 11 launch corridors + domestic corridors seeded in staging; `POST /v1/intl/quotes` for `CM→GA` returns rate 1.0000, fee and receive amount in < 150 ms p95; for `CM→AO` returns market-derived rate with `lockedUntil = now + 120 s`; quoting against a corridor with stale rate (> 300 s) returns `FX_STALE_RATE`; routing picks the secondary route when the primary provider's circuit is open (integration test); backfill sets `corridor_id` on 100 % of staging domestic transfers | Backend Lead (core)           |
-| **M6.3** | W3   | 2027-06-18  | Cross-border transfer saga (quote → fund → FX book → payout → complete / refund) on Phase 5 `Transfer`; nostro accounts and two-currency ledger postings; liquidity reservation; pre-funding instructions; intra-CEMAC `XAF→XAF` corridors end-to-end in staging via simulator                                                                                                                                                                                         | Saga for `CM→GA` completes in staging with balanced ledger (sum of entries per currency = 0, FX position account carries the spread); killing the worker at any step leaves the transfer recoverable (chaos test); a quote whose nostro liquidity is below reserve is refused; refund path returns funds to sender and releases the reservation; expired quote at confirmation returns `QUOTE_EXPIRED` with a fresh quote                                                                | Backend Lead (core)           |
-| **M6.4** | W4   | 2027-06-25  | Cross-currency corridors `CM→AO`, `CM→MZ`, `CM→GW`, `CM→CV`, `CM→ST` in staging (Unitel Money, e-Mola, Orange Money GW adapters from Phase 4; new `aggregator-payout` connector for CV/ST/GW bank payout built with the Phase 4 SDK); regulatory fields (purpose, source of funds, identity snapshot) enforced; **dark deploy to production** with FX ingestion and shadow quotes                                                                                      | Each cross-currency corridor completes end-to-end in staging against simulator profiles; `aggregator-payout` passes Phase 4 conformance; transfer without `purposeCode` rejected 422; production `/health/ready` shows `fx-rates` indicator `up` with age < 120 s; shadow quote log in Loki shows 24 h of quotes with zero `FX_STALE_RATE` for pegged pairs                                                                                                                              | Backend Lead (core)           |
-| **M6.5** | W5   | 2027-07-02  | Transfer tracking (timeline events, tracking ref, recipient signed link, sender/recipient notifications `en/fr/pt`); settlement batch generation + SFTP delivery + inbound statement ingestion; reconciliation engine with break classification and resolution API; Phase 7 joint review of FX hand-over                                                                                                                                                               | Tracking page renders every state for a seeded transfer in all three locales; recipient link cannot be reused after 30 days or reveal more than masked name + amount + status; daily settlement file for a staging partner has matching control totals with the ledger; recon run over 1,000 seeded legs with 20 injected discrepancies classifies all 20 correctly and auto-matches the rest; Phase 7 lead signs the `FxRateProvider` interface                                         | Backend Lead (core) / QA Lead |
-| **M6.6** | W6   | 2027-07-09  | Admin portal: corridor console, FX console, nostro & pre-funding, settlement, reconciliation breaks, regulatory reports, cross-border explorer; customer portal: send-international flow and tracking; **friends-and-family** `CM→GA` live in production                                                                                                                                                                                                               | Operator can pause a corridor, change a markup, approve a pre-funding, resolve a break and download a report with an `audit_logs` row for each; a named friends-and-family user sends `XAF 10,000` CM→GA in production and the recipient's Airtel Money GA wallet is credited; Playwright suites green; Lighthouse a11y ≥ 90 on send flow                                                                                                                                                | Frontend Lead                 |
-| **M6.7** | W7   | 2027-07-16  | Hardening: k6 (quotes 200 rps, transfers 30 TPS sustained), chaos (rate feed outage, SFTP outage, partner duplicate statement lines, worker kill mid-FX-book), security review and pen-test fixes, regulatory report generators validated against partner layouts, runbooks; canary `CM→GA`, `CM→TD` at 5 %                                                                                                                                                            | k6 thresholds met two nights; chaos scenarios leave zero unbalanced ledgers and zero orphan reservations; pen-test High/Critical closed; BEAC declaration sample accepted by sponsor bank on test data; canary error rate < 0.5 % and p95 quote-to-funded < 60 s                                                                                                                                                                                                                         | QA Lead / Security            |
-| **M6.8** | W8   | 2027-07-23  | Production readiness: wave A corridors (`CM→GA`, `CM→TD`, `CM→CG`, `GA→CM`) at 25 %, wave B (`CM→AO`, `CM→MZ`, `CM→GW`) in `FRIENDS_FAMILY` or `SANDBOX` depending on partner readiness, `CM→CV`, `CM→ST` `SANDBOX`; success criteria evidenced; sign-offs; handover to Phases 7, 8, 10, 11                                                                                                                                                                            | ≥ 50 real cross-border transfers completed in production across ≥ 2 corridors with reconciliation showing zero unexplained breaks for 5 consecutive days; every §12 evidence artifact filed; §11 sign-offs collected; Phase 8 team has read access to `transfer_cross_border_details` and events; Phase 11 team consuming quote/tracking OpenAPI                                                                                                                                         | Program Manager               |
+| ID       | Week | Target date | Deliverable                                                                                                                                                                                                                                                                                                                                                                                       | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                    | Owner role                        |
+| -------- | ---- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| **M6.1** | W1   | 2027-06-04  | Design freeze: corridor and routing model, `FxRateProvider` interface, quote-lock semantics, two-journal FX posting and `FX_POSITION` accounts, `CrossBorderSaga` step table, nostro model; ADR-0018 (corridors and routing), ADR-0019 (FX quote locking and shadow mode), ADR-0020 (settlement files and reconciliation); expand migration merged and applied to staging; licensing/partner matrix v1 (§8.4) reviewed by compliance; FX vendor and aggregator short-list | ADRs approved by architect + Phase 5 lead + Phase 7 lead; migration passes `up → down → up` on a Phase 5 production snapshot; Phase 5 regression suite green on the expanded schema; permissions, flags, `API_ROUTES.intl` registered in `@bi-rem/shared`; open questions Q6.1, Q6.5, Q6.9 closed                                                                                                                                                    | Solution Architect                |
+| **M6.2** | W2   | 2027-06-11  | Corridor configuration service and admin API with status workflow and four-eyes; routing engine with health-gated fallback; FX ingestion (`PeggedRateProvider`, `MarketRateProvider`, `ManualRateProvider`) into `fx_rates` + Redis; `IntlQuoteService` with lock window, signature and shadow mode; domestic corridor backfill job                                                                        | `POST /v1/intl/quotes` p95 < 120 ms on staging with warmed Redis; quote reproducible from `fx_rates` row + corridor markup + fee schedule (property test); `fx_rates` rows every 60 s for every enabled pair with age metric; backfill fills 100 % of Phase 5 `transfers.corridor_id` on staging                                                                                                                                              | Backend lead                      |
+| **M6.3** | W3   | 2027-06-18  | `CrossBorderSaga` registered in Phase 5 `SagaStepRegistry` for `TransferType.CROSS_BORDER` (reserve → debit → `FX_CONVERT` → `COMPLIANCE_HOLD` slot → payout leg → finalise, with compensations); nostro accounts, reservations and two-currency ledger postings; pre-funding instructions; intra-CEMAC `CM→GA` and `CM→TD` end-to-end in staging via Phase 4 simulator                               | Property test: for every completed transfer, the XAF journal and the AOA/XAF journal each balance and `FX_POSITION` entries equal `sendAmount` and `recvAmount` at the locked rate; chaos test: worker killed between every step × 3, every transfer ends `COMPLETED` or `REFUNDED`, trial balance zero per currency; `HELD` ↔ release/refund paths covered                                                                                      | Backend lead                      |
+| **M6.4** | W4   | 2027-06-25  | Cross-currency corridors `CM→AO`, `CM→MZ`, `CM→GW`, `CM→CV`, `CM→ST` in staging (Phase 4 `unitel-money`, `emola`, `orange-money` GW adapters; new `@bi-rem/connector-aggregator-payout` for CV/ST bank payout); regulatory fields and snapshots enforced; purpose/source/relationship catalogue in `en/fr/pt`; **dark deploy to production** with FX ingestion and shadow quotes                       | Aggregator connector 100 % simulator conformance, ≥ 90 % vendor-sandbox conformance; `POST /v1/intl/transfers` rejects missing `purposeCode` / `sourceOfFundsCode` / declaration with 422; production shadow quotes logged for 48 h with age p99 < 90 s and no `FX_RATE_STALE`; Phase 5 production metrics unchanged after the deploy                                                                                                      | Backend lead / Compliance Analyst |
+| **M6.5** | W5   | 2027-07-02  | Transfer tracking (timeline, tracking ref, recipient signed link, sender/recipient notifications `en/fr/pt`, push payload slot); settlement batch generation, SFTP delivery, inbound statement ingestion with per-partner parsers; reconciliation engine extension and break workflow; regulatory report generators v1 (BEAC declaration + statistics, BNA, BM); joint Phase 7 boundary review | Golden-file tests for every outbound layout and every partner inbound layout; recon match rate ≥ 99.5 % on seeded staging data with 2 % injected anomalies all classified correctly; recipient link token tamper tests pass; Phase 7 lead signs the `FxRateProvider` contract test suite                                                                                                                                                | Backend lead / QA lead            |
+| **M6.6** | W6   | 2027-07-09  | Admin portal: corridor console, FX console, nostro & pre-funding, settlement, recon extensions, regulatory reports, cross-border explorer; customer portal: send-international flow, tracking, recipient page, receipts; **friends-and-family `CM→GA` live in production** (20 named users, `XAF 50,000` cap)                                                                                          | Playwright journeys green in `en/fr/pt` for customer and admin; axe-core no serious issues; first 20 real `CM→GA` transfers `PAID_OUT` with matching ledger, leg and partner statement lines; receipts show locked rate and markup disclosure                                                                                                                                                                                                 | Frontend lead / Program Manager   |
+| **M6.7** | W7   | 2027-07-16  | Hardening: k6 (quotes 200 rps, 30 cross-border transfers/s sustained for 1 h), chaos (vendor outage, SFTP outage, duplicate statement lines, worker kill mid-FX-book, corridor pause mid-flight), external pen-test and fixes, report generators validated against partner layouts, runbooks; Phase 7 engine on staging behind `fx.corridor.<pair>.enabled`; canary `CM→GA`, `CM→TD` at 5 %   | Two consecutive k6 nights within budgets (quote p95 < 150 ms, confirm p95 < 400 ms, error rate < 0.1 %); zero High/Critical pen-test findings open; `FxRateProvider` contract suite green against the Phase 7 implementation; canary guardrails (`flag-guardrails.yml`) exercised with a forced rollback drill                                                                                                                             | QA lead / DevOps                  |
+| **M6.8** | W8   | 2027-07-23  | Production readiness: wave A corridors (`CM→GA`, `CM→TD`, `CM→CG`, `GA→CM`) at 25 %; wave B (`CM→AO`, `CM→MZ`, `CM→GW`) in `FRIENDS_FAMILY` or `SANDBOX` per partner readiness; `CM→CV`, `CM→ST` `SANDBOX`; success criteria evidenced; §11 sign-offs; handover to Phases 7, 8, 10, 11                                                                                                             | §12 evidence collected from production; transfer success ≥ 98 % and payout p95 < 15 min over the canary week for wave A; recon match ≥ 99.5 % for 5 consecutive business days; first BEAC statistics file produced for the partner's July submission; sign-offs collected; Phase 8 team consuming `intl.transfer.created` fixtures on day one                                                                                                   | Program Manager                   |
 
 ```mermaid
 gantt
@@ -85,68 +85,83 @@ gantt
   dateFormat YYYY-MM-DD
   axisFormat %d %b
   section Design and schema
-  M6.1 ADRs, expand migration, partner matrix       :m1, 2027-05-31, 2027-06-04
+  M6.1 ADRs, expand migration, partner matrix      :m1, 2027-05-31, 2027-06-04
   section Corridors and FX
-  M6.2 Corridors, routing, FX ingest, quotes        :m2, 2027-06-07, 2027-06-11
-  M6.4 Cross currency corridors, dark deploy        :m4, 2027-06-21, 2027-06-25
+  M6.2 Corridors, routing, FX ingest, quotes       :m2, 2027-06-07, 2027-06-11
+  M6.4 Cross currency corridors, dark deploy       :m4, 2027-06-21, 2027-06-25
   section Saga and settlement
-  M6.3 Saga, nostro ledger, intra CEMAC             :m3, 2027-06-14, 2027-06-18
-  M6.5 Tracking, settlement, reconciliation         :m5, 2027-06-28, 2027-07-02
+  M6.3 Saga, nostro, two currency ledger           :m3, 2027-06-14, 2027-06-18
+  M6.5 Tracking, settlement, recon, reports        :m5, 2027-06-28, 2027-07-02
   section Portals and rollout
-  M6.6 Admin and customer portals, friends family   :m6, 2027-07-05, 2027-07-09
-  M6.7 Hardening, chaos, canary                     :m7, 2027-07-12, 2027-07-16
-  M6.8 Production readiness and handover            :m8, 2027-07-19, 2027-07-23
+  M6.6 Portals and friends and family CM to GA     :m6, 2027-07-05, 2027-07-09
+  M6.7 Hardening, chaos, pen test, canary          :m7, 2027-07-12, 2027-07-16
+  M6.8 Production readiness and handover           :m8, 2027-07-19, 2027-07-23
+  section Parallel
+  Phase 7 FX and Treasury starts                   :crit, 2027-06-28, 2027-07-23
 ```
+
+Staffing note: two backend engineers and one frontend engineer move to Phase 7 on 2027-06-28, which is why the saga, ledger and settlement work (M6.3–M6.5) is front-loaded and W5–W8 is portals, hardening and rollout. One QA engineer joins Phase 7 at the same time; the remaining QA engineer owns the hardening week with the backend pair.
 
 ---
 
 ## 3. Deliverables
 
-Every item from the phase brief, with its definition of done (DoD). Code lives in `apps/api/src/modules/intl/*` (NestJS module `IntlModule` with sub-modules `corridors`, `fx`, `nostro`, `saga`, `tracking`, `settlement`, `reconciliation`, `regulatory`), shared schemas in `packages/shared/src/schemas/intl.ts`, the new connector in `packages/connectors/aggregator-payout`.
+Each deliverable lists what is built and a precise definition of done (DoD). Every mutating endpoint writes an `AuditLog` row through the Phase 1 interceptor; every state change emits an outbox event; every amount is `BIGINT` minor units with an ISO-4217 `currency`.
 
 ### 3.1 Corridor configuration
 
-- **DoD**: `corridors` and `corridor_routes` tables (§5) seeded for the 11 launch countries (send side `CM`, `GA`, `TD`, `CG`, `CF`, `GQ`; receive side all 11) plus one domestic corridor per Phase 5 live country; admin API `GET/POST/PATCH /v1/corridors` with maker-checker on status changes to `LIVE`; `CorridorService.resolve(sendCountry, recvCountry, beneficiaryType)` returns effective config (limits intersected with the sender's `KycLevelPolicy`, fee schedule, markup, lock seconds, required fields, route list) cached 30 s in Redis; corridor status drives flag evaluation (`intl.corridor.<k>.enabled/live` must both be on **and** status ≥ `FRIENDS_FAMILY`); every corridor change audited with before/after; `pnpm intl corridor:lint` validates that every `LIVE` corridor has ≥ 1 healthy route, a nostro account, a fee schedule and a regulator code.
+- **What**: `apps/api/src/modules/corridors/*` — `CorridorService`, `CorridorRouteService`, `RoutingEngine`, admin controller, Zod schemas `@bi-rem/shared/schemas/corridors.ts`, seeds for the eleven countries (all `DRAFT`) and domestic corridors for the Phase 5 live countries.
+- **DoD**: `corridors` row per ordered pair with `key`, currencies, `status`, limits, `feeScheduleId`, `fxMarkupBps`, `quoteLockSeconds` (default 180; 900 for pegged-pair corridors), `quoteGraceSeconds` (default 30), `cutoffLocalTime` + `timezone`, `valueDateOffsetDays`, `requiredFields`, `compliance_rules`, `regulatorCode`, `licenceBasis`, `partnerProviderId`, `slaMinutes`; status transitions validated by a state machine (`DRAFT → SANDBOX → FRIENDS_FAMILY → LIVE`, any active state → `PAUSED` → previous state, `LIVE|PAUSED → RETIRED`); moving to `FRIENDS_FAMILY` or `LIVE` requires `corridors:approve` by a second user and a checklist (routes healthy, nostro funded above `minReserveMinor`, fee schedule `ACTIVE`, licence evidence document attached, regulator fields configured); `GET /v1/corridors/public?from=CM` returns only corridors visible to the caller (status + flags) with limits, rails, indicative rate and ETA, cached 60 s; `RoutingEngine.select(corridor, beneficiary, amount)` returns the first route whose provider is `ACTIVE`, circuit closed, `wallet.connector.<key>.live=true`, within route caps and nostro liquidity, else the next, else `NO_ROUTE_AVAILABLE`; routes testable with `POST /v1/corridors/:id/routes/:rid/test` (name enquiry against a test MSISDN); 100 % unit coverage of the state machine and routing selection.
 
 ### 3.2 Cross-Currency Transfers
 
-- **DoD**: `POST /v1/intl/transfers` with `quoteId` creates a Phase 5 `Transfer` of kind `CROSS_BORDER` plus `transfer_cross_border_details`; saga (§4.3) funds in send currency, books FX at the locked rate, reserves and then consumes nostro liquidity, dispatches the payout `WalletTransaction` in receive currency through the routed provider, and completes or refunds; ledger postings (§4.4) balance per currency; receive amount shown at quote equals amount paid out to the minor unit (integration test over 10,000 random amounts across all six currencies, including exponent-0 rounding for XAF/XOF); `XAF→XOF` handled as a cross-currency corridor at fixed parity with its own nostro (the two CFA francs are not interchangeable at the partner level).
+- **What**: `CrossBorderSaga` step definitions registered in the Phase 5 `SagaStepRegistry` for `TransferType.CROSS_BORDER`; `FxConversionStep` (`FX_CONVERT`) posting two linked journals; refund and compensation paths; limit reservation in send currency plus a USD-equivalent `CROSS_BORDER` counter.
+- **DoD**: `POST /v1/intl/transfers` with a valid, unexpired `IntlQuote` creates a `Transfer(type=CROSS_BORDER)` + `transfer_cross_border_details` + reservation journal in one transaction and returns 202 with `trackingRef`, `state=QUOTED`, `nextAction`; the saga debits the sender (XAF journal: Dr `LIABILITY:CUSTOMER:<wallet>`, Cr `REVENUE:FEES:CROSS_BORDER:XAF`, Cr `LIABILITY:TAX:*` if applicable, Cr `FX_POSITION:XAF`), books the receive side (AOA journal: Dr `FX_POSITION:AOA`, Cr `SUSPENSE:PAYOUT_PENDING:AOA`) linked by `ledger_journals.fx_pair_journal_id`, then on `PAYOUT_CONFIRMED` moves `SUSPENSE:PAYOUT_PENDING:AOA → ASSET:NOSTRO:<key>:AOA`; `recvAmount` on the payout leg equals the quote's `recvAmount` exactly; failure after FX booking reverses both journals with `COMPENSATION` journals and refunds principal + fee to the sender; expired quote at confirmation → 409 `QUOTE_EXPIRED` with `nextAction=REQUOTE` unless within `quoteGraceSeconds` and the current rate moved less than `quoteGraceMaxDriftBps` (default 25) against BI-Rem; Phase 5 `LedgerService` single-currency invariant untouched (each journal is one currency).
 
 ### 3.3 Cross-Network Transfers
 
-- **DoD**: `RoutingEngine.select(corridor, beneficiary)` chooses the highest-priority `CorridorRoute` whose provider is `enabled`, circuit `CLOSED` or `HALF_OPEN`, supports the beneficiary type and whose nostro has liquidity; weighted split supported for A/B routing; fallback to the next route on `ConnectorUnavailableError` before submission (never after a provider has accepted a leg); routing decision persisted on the transfer (`routeId`, `routingReason`); same beneficiary MSISDN on a different network resolved by Phase 4 `validateAccount` before quoting (name match score surfaced); `aggregator-payout` connector (bank payout for `CV`, `ST`, `GW` and mobile-money fallback) implemented with the Phase 4 SDK, passing the conformance suite, with its simulator profile.
+- **What**: Routing across networks and rails (`MOBILE_MONEY`, `BANK_ACCOUNT`) using Phase 4 `WalletTransaction` `PUSH` legs with `parentType='Transfer'`; `@bi-rem/connector-aggregator-payout` built with the Phase 4 connector SDK; beneficiary rail validation.
+- **DoD**: A transfer funded on MTN MoMo CM pays out on Airtel Money GA, Moov Money TD, MTN MoMo CG, Orange Money GW, Unitel Money AO or e-Mola MZ with identical saga code; bank payouts to CV and ST go through the aggregator connector (`capabilities()` truthful; `transferFunds`, `getTransactionStatus`, `validateAccount`, `getBalance`, webhook verification); route fallback on `ConnectorUnavailableError` or open circuit emits `intl.transfer.rerouted` and never double-submits (leg `externalReference` = `trackingRef` + attempt); `UNKNOWN` leg outcomes hold the transfer (`HELD`, `PARTNER_UNKNOWN_OUTCOME`) until Phase 4 resolution emits `wallet.transaction.succeeded|failed`; beneficiaries for bank rails require `bankCode` or `bankBic` + account number and pass the aggregator `validateAccount` before the quote is confirmed.
 
 ### 3.4 FX Conversion
 
-- **DoD**: `FxRateProvider` interface (`fetchRates(pairs): Promise<RateTick[]>`, `supports(pair)`, `healthCheck()`); `PeggedRateProvider` (parities as `Setting` rows `intl.fx.peg.<base>-<quote>`, reviewed yearly) and `MarketRateProvider` (vendor REST, API key via Phase 3 credential store, 60 s schedule, Zod-validated response); `fx_rates` append-only with `source`, `mid`, `bid`, `ask`, `capturedAt`; latest tick per pair mirrored in Redis `fx:latest:<base>:<quote>`; `FxQuoteService.quote()` derives cross rates through `EUR` or `USD` when no direct tick exists (`XAF→AOA = EUR/AOA ÷ EUR/XAF`), applies corridor markup in bps, rounds receive amount **down** to the receive currency exponent, persists `fx_quotes` with `lockedUntil`, `rateSourceTickIds`, `markupBps`; confirmation after `lockedUntil` → `QUOTE_EXPIRED`; tolerance guard: if the live mid moved > `fxMaxDriftBps` (default 150) between quote and FX booking the transfer goes `HELD` (`FX_DRIFT`) for treasury decision rather than silently losing margin; shadow mode logs quotes without exposing them; rate age and drift exported as Prometheus gauges.
+- **What**: `apps/api/src/modules/fx/*` (Phase 6 scope) — `FxRateProvider` interface, `PeggedRateProvider`, `MarketRateProvider`, `ManualRateProvider`, `FxRateIngestWorker` (queue `intl:fx-ingest`), `fx_rate_sources` and `fx_rates`, `IntlQuoteService`, freeze and staleness guards, shadow mode.
+- **DoD**: `fx_rates` receives one row per enabled pair per poll (`rateNum` scaled by `RATE_SCALE = 10^9`, `source`, `capturedAt`, `validUntil`), latest cached in Redis `fx:rate:<pair>` with TTL = `maxAgeSeconds`; cross rates derived through `EUR` for pegged currencies and `USD`/`EUR` for AOA/MZN with the derivation path stored on the quote; quote refused with `FX_RATE_STALE` when the newest tick is older than the source's `maxAgeSeconds` (market 900 s, pegged ∞, manual per entry), and with `FX_FROZEN` when `intl.fx.freeze=true`; deviation guard rejects a tick that moves more than `maxDeviationBps` (default 300) from the previous one and opens an alert instead of publishing; manual rates require two different `fx:write` users and expire; shadow mode (`intl.fx.quote-engine=shadow`) computes and logs quotes without returning them; `GET /v1/fx/rates?pair=XAF/AOA` returns the latest tick, derivation and age; the `FxRateProvider` contract test suite (`packages/shared/test/fx-rate-provider.contract.ts`) is published for Phase 7.
 
 ### 3.5 Transfer Tracking
 
-- **DoD**: `trackingRef` generated at transfer creation (`BIR-` + 8 chars, collision-checked), shown in every notification; `transfer_tracking_events` written by the saga at each customer-visible state; `GET /v1/intl/transfers/:id/timeline` (sender) and `GET /v1/track/:token` (recipient; HMAC-signed, 30-day expiry, masked sender name, amount, currency, status, provider reference; rate-limited 30/min/IP); notification templates `intl-transfer-sent`, `intl-transfer-paid-out`, `intl-transfer-failed`, `intl-transfer-refunded`, `intl-recipient-incoming`, `intl-recipient-paid` for SMS and EMAIL in `en`, `fr`, `pt` seeded; customer portal timeline component; estimated delivery (`expectedPayoutAt` from corridor SLA) displayed and recomputed on delays; "delayed" event emitted when `PAYOUT_PENDING` exceeds the corridor SLA.
+- **What**: `transfer_tracking_events` (append-only, partitioned monthly), `TrackingService`, tracking reference generator, signed recipient link, `intl:notify` queue, templates `intl.*` in `en/fr/pt`.
+- **DoD**: Every state change of a cross-border transfer writes exactly one tracking event in the same transaction (trigger-enforced consistency test); `GET /v1/intl/transfers/:id/timeline` returns customer-safe copy keys, timestamps and ETA (`corridor.slaMinutes` from `FUNDED`); `GET /v1/track/:token` (public, 30 req/min/IP) resolves an HMAC-signed token (`INTL_TRACKING_TOKEN_KEY`, 7-day expiry, bound to transfer id) to masked sender name, receive amount, state and ETA, never the sender MSISDN or full names; sender notified at `TRANSFER_CREATED`, `PAYOUT_CONFIRMED`, `HELD`, `REFUNDED`; recipient notified by SMS at `PAYOUT_SUBMITTED` (with tracking link) and `PAYOUT_CONFIRMED`; dedupe via Phase 5 `notification_dedup`; Phase 11 push payload slot present in templates.
 
 ### 3.6 Pre-funding / nostro accounts per corridor
 
-- **DoD**: `nostro_accounts` linked to a Phase 5 ledger asset account per (partner, currency), optionally to Phase 4 `provider_accounts`; `NostroService.available(nostroId)` = ledger balance − open reservations − in-flight payouts, cached 10 s; reservation created at transfer creation (`fx_quotes.reservedMinor`), released on expiry/refund, consumed on payout success; `prefunding_instructions` with states `DRAFTED → APPROVED → SENT → RECEIVED → RECONCILED | CANCELLED`, maker-checker (`treasury:write` + second approver), expected vs received, bank reference; low-liquidity alert when available < `minReserveMinor` or < projected 24 h outflow (rolling average); nostro balance snapshot nightly into `nostro_balance_snapshots` view (SQL view over ledger, no new table).
+- **What**: `nostro_accounts`, `nostro_provider_accounts`, `nostro_reservations`, `prefunding_instructions`, `NostroService`, `LiquidityGuard`, liquidity snapshot and alerting.
+- **DoD**: Each `CorridorRoute` references exactly one `NostroAccount` in the receive currency; `NostroService.available(nostroId)` = ledger balance of `ASSET:NOSTRO:<key>:<ccy>` − sum of active reservations − in-flight payouts, computed under `SELECT … FOR UPDATE` on the nostro row at reservation time; a quote above available liquidity (minus `minReserveMinor`) is refused with `CORRIDOR_LIQUIDITY_LOW`; reservations expire with the quote; `intl.nostro.liquidity_low` emitted when available < `alertThresholdMinor` or projected 24 h outflow (trailing 7-day average) exceeds available; pre-funding lifecycle `DRAFT → APPROVED → SENT → RECEIVED → RECONCILED` with maker-checker (`nostro:approve`), expected vs received amount, bank reference, and the receive journal (Dr `ASSET:NOSTRO:<key>:<ccy>`, Cr `FX_POSITION:<ccy>` for converted funding or Cr `ASSET:BANK:<ccy>` for same-currency top-ups); `GET /v1/nostro/:id/liquidity` serves the treasury dashboard tile.
 
 ### 3.7 Settlement files
 
-- **DoD**: `settlement_batches` created at each corridor cut-off per (partner, currency, value date) collecting completed payouts and refunds; outbound files: `payout-instructions-<partner>-<ccy>-<date>.csv` (one line per payout: tracking ref, external reference, provider txn id, amount, currency, FX rate, value date, beneficiary last4, purpose code) and `settlement-statement-<partner>-<ccy>-<date>.csv` (opening position, payouts, fees, pre-funding received, closing position); optional `pain.001.001.09` XML for bank partners; SHA-256, line count and control totals in `settlement_files`; delivered over SFTP (`ssh2-sftp-client`, host-key pinning, key auth) from static egress IPs or written to the S3-compatible bucket when `intl.settlement.auto-deliver=false`; inbound partner statements pulled from SFTP paths configured per partner, parsed by per-partner `StatementParser` (CSV/XLSX/MT940-light), stored line-by-line in `settlement_file_lines`; duplicate file detection by hash; delivery and ingestion retried with DLQ.
+- **What**: `settlement_batches`, `settlement_files`, `settlement_file_lines`, `SettlementBatchScheduler` (queue `intl:settlement`), renderers (`CsvPayoutInstructionRenderer`, `Pain001Renderer`, `SettlementStatementRenderer`), `SftpClient` (ssh2 with host-key pinning), inbound parsers per partner (`camt.053`, CSV layouts), S3 storage with Object Lock.
+- **DoD**: At the corridor cut-off a batch per (nostro, value date) closes, generates the payout instruction file and settlement statement (both currencies, locked rate per line, totals), stores them with SHA-256 and version, and delivers over SFTP when `intl.settlement.auto-deliver=true`; redelivery produces a new file version, never a mutated file; inbound statements are fetched hourly, parsed to lines (amount, currency, value date, partner reference, our reference), de-duplicated by `(fileId, lineNo)` and by partner reference; parse failures quarantine the file and alert; every layout has golden files in `apps/api/test/fixtures/settlement/<partner>/`; manual upload path `POST /v1/settlement/files/ingest` for SFTP outages.
 
 ### 3.8 Transfer Reconciliation
 
-- **DoD**: `reconciliation_runs` per (nostro, value date) executed nightly 03:00 UTC and on demand; three sources normalised to `ReconItem { ref, providerTxnId, amountMinor, currency, valueDate, status, source }`; matching passes: exact `externalReference`, exact `providerTransactionId`, fuzzy (amount ± 0 and date ± 1 day with unique candidate); unmatched or mismatched items become `reconciliation_breaks` with type, age, amounts per source, suggested action; resolution actions (`MATCH_MANUALLY`, `WRITE_OFF`, `ADJUST_LEDGER`, `REQUEST_PARTNER_CORRECTION`, `MARK_DUPLICATE`) with evidence upload (Phase 2 documents pipeline) and four-eyes above the equivalent of USD 500; adjusting ledger entries posted to `recon_adjustments` ledger account; recon summary metrics (match rate, open breaks by age bucket) and Grafana panel; exit criterion: 5 consecutive production days with zero unexplained breaks.
+- **What**: Extension of the Phase 5 `recon` module: `NostroReconciliationSource`, matcher, break classifier, `intl:recon` queue, break resolution with journals.
+- **DoD**: Nightly run per nostro and value date (`recon.yml` schedule extended) matches ledger entries on `ASSET:NOSTRO:*`/`SUSPENSE:PAYOUT_PENDING:*`, Phase 4 legs and statement lines; exact match on reference, then amount + date (±1 day) tolerance; unmatched items become `reconciliation_breaks` with the new kinds and `nostro_account_id`/`settlement_file_line_id`; `PATCH /v1/recon/breaks/:id` resolution actions (`EXPLAIN`, `POST_CORRECTION`, `REQUEST_PARTNER_REVERSAL`, `MARK_DUPLICATE`) require evidence and a second approver above USD 500 equivalent; match rate, open breaks by age and amount exposed as Prometheus gauges; recon run summary e-mailed to finance ops.
 
-### 3.9 Regulatory reporting fields & central-bank reporting
+### 3.9 Regulatory reporting fields and central-bank reporting
 
-- **DoD**: `transfer_purpose_codes` reference table (ISO 20022 code, label `en/fr/pt`, allowed per corridor, mapping to BEAC/BNA/BM nomenclature); `transfer_cross_border_details` carries `purposeCode`, `sourceOfFundsCode`, `relationshipCode`, `senderIdentitySnapshot` (JSON: id type, last4, nationality, KYC level, residence country), `recipientSnapshot` (name, country, account last4, provider), `declaredByUserAt`, `regulatoryStatus`; API rejects missing/invalid codes (422) and corridor-specific requirements (e.g. `BUSINESS_*` purposes require `LEVEL_2` KYC); `RegulatoryReportService.generate(type, period)` produces `BEAC_FX_DECLARATION` (monthly + per-transfer above threshold), `BNA_INBOUND_REMITTANCES`, `BM_INBOUND_REMITTANCES`, `BCEAO_PARTNER_STATEMENT`, `BCV_PARTNER_STATEMENT`, `BCSTP_PARTNER_STATEMENT` as CSV/XML into the document store with checksum, generated-by, period and status (`GENERATED → REVIEWED → SUBMITTED`); downloads audited; layouts versioned in `docs/handbooks/regulatory-reports.md`.
+- **What**: `regulatory_codes` catalogue, `transfer_cross_border_details` snapshots, `regulatory_reports` + `regulatory_report_items`, generators per regulator, `regulatory-reports.yml` workflow.
+- **DoD**: `POST /v1/intl/transfers` requires `purposeCode`, `sourceOfFundsCode`, `relationshipCode` and `declarationAccepted=true`; codes validated against the catalogue for the corridor (`regulatory_codes.allowedCorridors`); sender snapshot (`idType`, `idNumberLast4`, `nationality`, `residenceCountry`, `kycLevel`, `dateOfBirth` year) and recipient snapshot (name, country, rail, masked account) stored immutably; BEAC generators produce the FX-transfer declaration file (per transfer above the documentary threshold `Setting intl.beac.declaration-threshold-xaf`) and the monthly transfer statistics file (counts and amounts by corridor, purpose, residence), both table-driven with `layoutVersion`; inbound returns for BNA, BM, BCV, BCEAO, BCSTP generated from the same items; reports move `DRAFT → GENERATED → REVIEWED → SUBMITTED → ACCEPTED|REJECTED` with reviewer and submission reference; files stored with Object Lock; a report line always points back to transfer ids (`regulatory_report_items`).
 
 ### 3.10 Licensing / partner model per country
 
-- **DoD**: §8.4 matrix reviewed by compliance and counsel, with licence basis, regulator, partner, status and blocking items per country; encoded on each corridor (`regulatorCode`, `licenceBasis`, `partnerModel`); a corridor cannot move to `FRIENDS_FAMILY` or `LIVE` unless `licenceEvidenceDocumentId` points to an uploaded licence/partner agreement and compliance has approved (maker-checker); partner due-diligence checklist stored under `docs/handbooks/partner-onboarding.md`.
+- **What**: §8.4 matrix maintained by compliance, encoded on corridors and routes; licence/partner evidence documents stored through the Phase 2 documents pipeline (`KycDocument` kind `LICENCE_EVIDENCE` is not reused — a `Setting`-referenced S3 key on the corridor `licenceEvidenceKey`).
+- **DoD**: Every `FRIENDS_FAMILY`/`LIVE` corridor has `licenceBasis`, `regulatorCode`, `partnerProviderId` and `licenceEvidenceKey` set (checklist gate); the admin corridor detail shows the regulator, partner and contract reference; the matrix is exported to `docs/handbooks/licensing-matrix.md` and reviewed by counsel before M6.6.
 
 ### 3.11 Portals, observability, runbooks
 
-- **DoD**: admin and customer screens of §7 with Playwright coverage; Grafana dashboards _International_ (quotes/min, conversion funnel, saga state distribution, payout latency per corridor, liquidity per nostro, FX age/drift, settlement/recon status) and alerts (§11); runbooks `docs/handbooks/intl-operations.md` (pause corridor, FX freeze, liquidity top-up, break resolution, settlement redelivery, stuck saga, regulator report regeneration).
+- **What**: Admin and customer portal changes (§7), Grafana dashboards (`intl-overview`, `intl-fx`, `intl-nostro`, `intl-settlement-recon`), alerts, runbooks under `docs/runbooks/intl-*.md`.
+- **DoD**: Dashboards show quotes/min, quote-to-confirm conversion, transfers by corridor and state, payout latency p50/p95, held transfers by reason and age, rate age per source, nostro available vs reserve, settlement deliveries, recon match rate; alerts for rate stale > `maxAgeSeconds`, freeze active > 30 min, liquidity low, SFTP delivery failed, held > SLA, recon match < 99 %; eleven runbooks (§15.4) reviewed in a game day at M6.7.
 
 ---
 
@@ -155,226 +170,276 @@ Every item from the phase brief, with its definition of done (DoD). Code lives i
 ### 4.1 Component diagram (Phase 6 additions)
 
 ```mermaid
-flowchart LR
-  subgraph Clients
-    WEB[Customer portal web]
-    ADM[Admin portal]
-    MOB[Mobile Phase 11]
-    RCP[Recipient tracking page]
+flowchart TB
+  subgraph clients["Clients"]
+    WEB["Customer portal apps/web<br/>send international, tracking"]
+    ADM["Admin portal apps/admin<br/>corridor, FX, nostro, settlement, reports"]
+    RCP["Recipient browser<br/>public tracking page"]
+    MOB["Phase 11 mobile app"]
   end
 
-  subgraph API["apps/api http group"]
-    CORR[CorridorsModule]
-    FXQ[FxQuoteService]
-    ITX[IntlTransfersController]
-    TRK[TrackingController]
-    REGC[RegulatoryController]
-    T5[Phase 5 TransfersModule]
+  subgraph api["Platform API apps/api - http process group"]
+    CORR["CorridorsModule<br/>CorridorService, RoutingEngine"]
+    FX["FxModule Phase 6 scope<br/>FxRateProvider, IntlQuoteService"]
+    INTL["IntlTransfersModule<br/>IntlTransfersController, CrossBorderService"]
+    TRACK["TrackingModule<br/>timeline, signed links"]
+    NOS["NostroModule<br/>NostroService, LiquidityGuard, prefunding"]
+    SETT["SettlementModule<br/>batches, renderers, parsers"]
+    REG["RegulatoryReportsModule<br/>codes catalogue, generators"]
+    RECON["Phase 5 recon module<br/>NostroReconciliationSource"]
   end
 
-  subgraph Worker["apps/api worker group"]
-    SAGA[IntlSagaProcessor intl:saga]
-    FXI[FxIngestJob intl:fx-ingest]
-    DISP[PayoutDispatcher intl:payout-dispatch]
-    SETL[SettlementJob intl:settlement]
-    RECO[ReconciliationJob intl:recon]
-    REPJ[ReportGenerator intl:reports]
-    W4[Phase 4 WalletTransactionService]
-    LED[Phase 5 LedgerService]
+  subgraph workers["Worker process group - WORKER_QUEUES intl:*"]
+    SAGA["CrossBorderSaga worker<br/>queue intl:saga"]
+    INGEST["FxRateIngestWorker<br/>queue intl:fx-ingest"]
+    DISPATCH["PayoutDispatcher<br/>queue intl:payout-dispatch"]
+    SETTW["SettlementBatchScheduler<br/>queue intl:settlement"]
+    RECW["Recon runner<br/>queue intl:recon"]
+    REPW["Report generator<br/>queue intl:reports"]
+    NOTW["Intl notifier<br/>queue intl:notify"]
   end
 
-  subgraph Data
-    PG[(Neon Postgres)]
-    RD[(Upstash Redis)]
-    S3[(S3 compatible bucket)]
+  subgraph p5["Phase 5 primitives"]
+    LEDGER["LedgerService<br/>single currency journals, fx_pair_journal_id"]
+    STEPS["SagaStepRegistry<br/>FX_CONVERT and COMPLIANCE_HOLD slots"]
+    FEES["FeeEngine<br/>scope corridorKey"]
+    LIMITS["LimitService<br/>send currency and USD counters"]
   end
 
-  subgraph External
-    MKT[Market rate vendor]
-    PAY[Payout providers via Phase 4 connectors]
-    AGG[Aggregator bank payout]
-    SFTP[Partner SFTP]
+  subgraph p4["Phase 4 and Phase 3"]
+    WTX["WalletTransactionService<br/>PUSH and PULL legs"]
+    CONN["Connectors<br/>mtn-momo, airtel-money, moov-money,<br/>orange-money, unitel-money, emola,<br/>aggregator-payout new"]
+    VAULT["Credential vault and<br/>static egress IPs"]
   end
 
-  WEB --> CORR
-  WEB --> FXQ
-  WEB --> ITX
-  WEB --> TRK
-  MOB --> FXQ
-  MOB --> ITX
-  RCP --> TRK
+  subgraph data["Data"]
+    PG[("Neon PostgreSQL<br/>corridors, fx_rates, intl_quotes,<br/>transfer_cross_border_details,<br/>nostro_*, settlement_*, regulatory_*")]
+    REDIS[("Redis<br/>fx:rate:*, flags, BullMQ")]
+    S3[("S3 bucket Object Lock<br/>settlement and report files")]
+  end
+
+  subgraph ext["External"]
+    VENDOR["FX data vendor API"]
+    SFTP["Partner SFTP servers"]
+    PAYOUT["Payout provider APIs"]
+  end
+
+  WEB --> INTL
+  WEB --> FX
+  WEB --> TRACK
   ADM --> CORR
-  ADM --> REGC
-  ITX --> T5
-  FXQ --> RD
-  FXI --> MKT
-  FXI --> PG
-  FXI --> RD
-  T5 --> SAGA
-  SAGA --> LED
-  SAGA --> DISP
-  DISP --> W4
-  W4 --> PAY
-  W4 --> AGG
-  SETL --> SFTP
-  SETL --> S3
-  RECO --> PG
-  REPJ --> S3
-  SAGA --> PG
-  LED --> PG
+  ADM --> FX
+  ADM --> NOS
+  ADM --> SETT
+  ADM --> REG
+  ADM --> RECON
+  RCP --> TRACK
+  MOB --> INTL
+
+  INTL --> CORR
+  INTL --> FX
+  INTL --> NOS
+  INTL --> FEES
+  INTL --> LIMITS
+  INTL --> STEPS
+  FX --> REDIS
+  FX --> PG
+  CORR --> PG
+  NOS --> LEDGER
+
+  SAGA --> STEPS
+  SAGA --> LEDGER
+  SAGA --> DISPATCH
+  DISPATCH --> WTX
+  WTX --> CONN
+  CONN --> PAYOUT
+  INGEST --> VENDOR
+  INGEST --> PG
+  INGEST --> REDIS
+  SETTW --> S3
+  SETTW --> SFTP
+  SETTW --> VAULT
+  RECW --> RECON
+  REPW --> S3
+  NOTW --> TRACK
+  LEDGER --> PG
 ```
 
-Design notes: the `http` group answers quotes from Redis-mirrored rates (no vendor call in the request path); every money movement and every external call runs in the `worker` group; the saga is a BullMQ flow with one job per step and the transfer row as the single source of truth for the current step (idempotent step handlers, resumable after crash).
+**Reading the diagram.** The synchronous request path never touches an external system: `POST /v1/intl/quotes` reads the latest rate from Redis, runs the fee engine and the liquidity guard, and writes an `intl_quotes` row with a reservation. `POST /v1/intl/transfers` validates the quote signature and expiry, creates the Phase 5 `Transfer` plus `transfer_cross_border_details` and the reservation journal in one transaction, enqueues the saga and returns 202. Everything that talks to a payout provider, the FX vendor or an SFTP server runs in the worker group.
 
-### 4.2 Sequence — quote, lock, fund, convert, pay out
+### 4.2 Sequence — quote, lock, confirm, convert, pay out
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant C as Customer web
-  participant API as IntlTransfersController
-  participant FX as FxQuoteService
+  participant C as Customer portal
+  participant Q as IntlQuoteService
+  participant R as Redis fx:rate
   participant N as NostroService
-  participant S as IntlSagaProcessor
-  participant L as LedgerService Phase 5
-  participant W as WalletTransactionService Phase 4
+  participant T as IntlTransfersController
+  participant S as CrossBorderSaga worker
+  participant L as LedgerService
+  participant W as WalletTransactionService
   participant P as Payout provider
+  participant K as TrackingService
 
-  C->>API: POST /v1/intl/quotes sendCountry CM recvCountry AO amount 100000 XAF
-  API->>FX: quote corridor cm-ao
-  FX->>FX: read fx latest EUR XAF and EUR AOA from Redis, derive cross rate, apply markup
-  FX->>N: available liquidity for nostro AOA unitel
-  N-->>FX: available 48 500 000 AOA
-  FX-->>API: quote id, rate, fee, receive 139 420.00 AOA, lockedUntil now plus 120 s
-  API-->>C: 201 quote with countdown
-  C->>API: POST /v1/intl/transfers quoteId, beneficiaryId, purposeCode FAMILY_SUPPORT, sourceOfFunds SALARY
-  API->>API: validate quote not expired, corridor live for user, limits vs KycLevelPolicy
-  API->>N: reserve receive amount on nostro
-  API->>API: create Transfer CROSS_BORDER plus details, tracking ref, enqueue intl:saga
-  API-->>C: 202 transfer id, trackingRef, state QUOTED
-  S->>L: post funding entries sender wallet to intl clearing XAF
-  S->>W: PULL leg from sender wallet if wallet funded
+  C->>Q: POST /v1/intl/quotes corridor cm-ao, sendAmount XAF 100000
+  Q->>R: GET fx:rate:XAF/AOA
+  R-->>Q: tick rateNum, capturedAt, source
+  Q->>Q: staleness and freeze guards, markup bps, FeeEngine quote
+  Q->>N: reserve recvAmount on nostro unitel-ao-aoa
+  N-->>Q: reservation id or CORRIDOR_LIQUIDITY_LOW
+  Q-->>C: 201 quote id, rate, fee, recvAmount, lockedUntil, signature
+  C->>T: POST /v1/intl/transfers quoteId, beneficiaryId, purpose, source of funds, MFA
+  T->>T: verify signature and expiry, grace drift check, limits, KYC level
+  T->>L: post RESERVATION journal XAF in same tx as transfer rows
+  T-->>C: 202 trackingRef, state QUOTED, nextAction NONE
+  T->>S: enqueue intl:saga transferId
+  S->>L: DEBIT journal XAF - customer liability to fees and FX_POSITION:XAF
+  S->>L: FX_CONVERT journal AOA - FX_POSITION:AOA to SUSPENSE:PAYOUT_PENDING:AOA, linked pair
+  S->>K: events FUNDED and FX_LOCKED
+  S->>S: COMPLIANCE_HOLD slot - corridor compliance_rules
+  S->>W: create PUSH leg recvAmount AOA, externalReference trackingRef
+  W->>P: transferFunds
+  P-->>W: accepted, provider transaction id
+  S->>K: event PAYOUT_SUBMITTED, SMS to recipient with tracking link
+  P-->>W: webhook or poll - succeeded
   W-->>S: wallet.transaction.succeeded
-  S->>L: post FX entries clearing XAF to fx position, fx position to nostro AOA at locked rate
-  S->>S: drift check vs live mid, mark FX_BOOKED
-  S->>W: PUSH leg 139 420.00 AOA to recipient via routed provider
-  W->>P: transferFunds external reference
-  P-->>W: accepted, then webhook success
-  W-->>S: wallet.transaction.succeeded
-  S->>N: consume reservation
-  S->>L: post payout entries nostro AOA to recipient payable, fee to revenue
-  S->>S: PAID_OUT, tracking event, notify sender and recipient
-  S-->>C: notification SMS and in app
+  S->>L: SETTLEMENT journal AOA - SUSPENSE:PAYOUT_PENDING to ASSET:NOSTRO
+  S->>N: release reservation
+  S->>K: event PAYOUT_CONFIRMED, notify sender and recipient
+  S-->>C: transfer COMPLETED visible on next poll
 ```
 
-Failure branches: `PULL` leg fails → transfer `FAILED` before any FX posting, reservation released, no ledger movement beyond a reversed funding attempt; `PUSH` leg `FAILED` → saga posts reversing FX entries at the **same locked rate** (BI-Rem absorbs no FX risk on a failed payout because the position is unwound against the same nostro), refunds the sender (`REFUNDED`), releases reservation; `PUSH` leg `UNKNOWN` → transfer `HELD` with reason `PAYOUT_UNKNOWN`, nostro reservation kept, operator resolves through the Phase 4 explorer, saga resumes from the resolution event.
+Failure branches: provider `FAILED` after FX booking → saga runs the compensation table (reverse AOA journal, reverse XAF debit, refund fee, release reservation, release limits) and emits `REFUNDED`; provider `UNKNOWN` → `HELD` (`PARTNER_UNKNOWN_OUTCOME`) until Phase 4 resolution; corridor `PAUSED` between steps → `HELD` (`CORRIDOR_PAUSED`) with the AOA journal kept and reservation extended; `compliance_rules` match → `HELD` (`MANUAL_REVIEW_RULE`) before the payout leg, operator releases or refunds with evidence.
 
-### 4.3 Saga state machine
+### 4.3 Cross-border state machine
+
+`transfer_cross_border_details.state` is the customer-facing state; the Phase 5 `transfers.status` keeps its own values (`RESERVED`, `DEBITED`, `AWAITING_LEG`, `COMPLETED`, `COMPENSATING`, `FAILED`, `REFUNDED`, and new `HELD`). The mapping is deterministic and tested.
 
 ```mermaid
 stateDiagram-v2
   [*] --> QUOTED
-  QUOTED --> FUNDING: saga started
-  QUOTED --> EXPIRED: quote lock passed, not confirmed
-  FUNDING --> FUNDED: funding leg succeeded
-  FUNDING --> FAILED: funding leg failed
-  FUNDED --> HELD: manual review rule or corridor paused
-  FUNDED --> FX_BOOKED: FX entries posted within drift tolerance
-  FX_BOOKED --> HELD: drift above tolerance
-  HELD --> FX_BOOKED: operator release
+  QUOTED --> FUNDING: wallet pull needed
+  QUOTED --> FUNDED: wallet balance sufficient
+  FUNDING --> FUNDED: wallet.transaction.succeeded
+  FUNDING --> FAILED: pull failed
+  QUOTED --> CANCELLED: customer cancel
+  FUNDING --> CANCELLED: customer cancel before pull submitted
+  FUNDED --> FX_LOCKED: FX_CONVERT journals posted
+  FX_LOCKED --> HELD: compliance rule, corridor paused, liquidity, unknown outcome
+  FX_LOCKED --> PAYOUT_PENDING: PUSH leg accepted
+  HELD --> PAYOUT_PENDING: operator release
   HELD --> REFUNDING: operator refund
-  FX_BOOKED --> PAYOUT_PENDING: payout leg submitted
-  PAYOUT_PENDING --> PAID_OUT: payout leg succeeded
-  PAYOUT_PENDING --> HELD: payout leg unknown
-  PAYOUT_PENDING --> REFUNDING: payout leg failed
-  REFUNDING --> REFUNDED: refund leg succeeded and FX unwound
-  REFUNDING --> HELD: refund leg unknown
+  PAYOUT_PENDING --> PAID_OUT: wallet.transaction.succeeded
+  PAYOUT_PENDING --> HELD: UNKNOWN outcome
+  PAYOUT_PENDING --> REFUNDING: payout failed, reroute exhausted
+  REFUNDING --> REFUNDED: compensation journals posted
   PAID_OUT --> [*]
   REFUNDED --> [*]
   FAILED --> [*]
-  EXPIRED --> [*]
+  CANCELLED --> [*]
 ```
 
-Rules enforced in code: terminal states are `PAID_OUT`, `REFUNDED`, `FAILED`, `EXPIRED`; every transition writes a `transfer_tracking_events` row (customer-visible subset) and a Phase 5 transfer event; `HELD` always records a `holdReason` and an SLA timer (alert at 2 h, escalation at 24 h); a step handler re-run after a crash checks the persisted state and the idempotent effect (ledger entry `idempotencyKey`, `WalletTransaction.externalReference`) before acting.
+Rules enforced in code and tests: (1) every transition writes one `transfer_tracking_events` row and, when money moved, exactly one journal in the same transaction; (2) `PAID_OUT`, `REFUNDED`, `FAILED`, `CANCELLED` are terminal; (3) each saga step is idempotent (reads the transfer `FOR UPDATE`, checks the expected state, no-ops if applied) because BullMQ delivers at least once; (4) `HELD` always carries a `holdReason` and an SLA timestamp; (5) only `wallet.transaction.*` events can move money out of `SUSPENSE:PAYOUT_PENDING`.
 
 ### 4.4 Ledger model for cross-currency flows
 
-Phase 5's ledger is single-currency per account; a cross-currency transfer therefore touches accounts in two currencies, joined by a **corridor FX position account pair**. For `CM→AO` with locked rate `r` (AOA per XAF), send amount `S` XAF, fee `F` XAF, receive `R = floor((S − F) × r)` AOA:
+Phase 5 keeps every journal in a single currency. Phase 6 therefore books a cross-currency transfer as **two balanced single-currency journals** linked by `ledger_journals.fx_pair_journal_id`, meeting in per-currency clearing accounts `FX_POSITION:<ccy>` (type `SUSPENSE`). The net balance of `FX_POSITION:XAF` and `FX_POSITION:AOA` at any time is BI-Rem's open position per currency; Phase 7 ADR-0021 formalises revaluation and P&L on these very accounts.
 
-| #   | Debit                              | Credit                                                      | Amount | Currency |
-| --- | ---------------------------------- | ----------------------------------------------------------- | ------ | -------- |
-| 1   | Customer wallet / funding clearing | `intl_clearing_xaf`                                         | S      | XAF      |
-| 2   | `intl_clearing_xaf`                | `fee_revenue_xaf`                                           | F      | XAF      |
-| 3   | `intl_clearing_xaf`                | `fx_position_xaf_aoa` (XAF leg)                             | S − F  | XAF      |
-| 4   | `fx_position_aoa_xaf` (AOA leg)    | `nostro_aoa_unitel` (liability to recipient pending payout) | R      | AOA      |
-| 5   | `nostro_aoa_unitel`                | Recipient payable → settled by payout leg                   | R      | AOA      |
+| Step                      | Journal (currency) | Debit                                           | Credit                                                   | Amount                        |
+| ------------------------- | ------------------ | ----------------------------------------------- | -------------------------------------------------------- | ----------------------------- |
+| Reserve (confirm)         | RESERVATION (XAF)  | `LIABILITY:CUSTOMER:<wallet>`                   | `SUSPENSE:RESERVED:XAF`                                  | `totalDebit`                  |
+| Debit                     | DEBIT (XAF)        | `SUSPENSE:RESERVED:XAF`                         | `REVENUE:FEES:CROSS_BORDER:XAF`, `LIABILITY:TAX:*:XAF`, `FX_POSITION:XAF` | fee, tax, principal |
+| FX convert                | FX_CONVERT (AOA)   | `FX_POSITION:AOA`                               | `SUSPENSE:PAYOUT_PENDING:AOA`                            | `recvAmount`                  |
+| Payout confirmed          | SETTLEMENT (AOA)   | `SUSPENSE:PAYOUT_PENDING:AOA`                   | `ASSET:NOSTRO:<key>:AOA`                                 | `recvAmount`                  |
+| Partner fee (statement)   | PROVIDER_FEE (AOA) | `EXPENSE:PROVIDER_FEES:<key>:AOA`               | `ASSET:NOSTRO:<key>:AOA`                                 | partner fee                   |
+| Pre-funding received      | SETTLEMENT (AOA)   | `ASSET:NOSTRO:<key>:AOA`                        | `FX_POSITION:AOA`                                        | received AOA                  |
+| Pre-funding paid          | SETTLEMENT (XAF)   | `FX_POSITION:XAF`                               | `ASSET:BANK:<sponsor>:XAF`                               | wired XAF                     |
+| Refund after FX           | COMPENSATION (AOA) | `SUSPENSE:PAYOUT_PENDING:AOA`                   | `FX_POSITION:AOA`                                        | `recvAmount`                  |
+| Refund after FX           | COMPENSATION (XAF) | `FX_POSITION:XAF`, `REVENUE:FEES:CROSS_BORDER:XAF` | `LIABILITY:CUSTOMER:<wallet>`                        | principal + fee               |
 
-Each currency's entries balance independently; the pair of position accounts carries the open FX exposure that Phase 7 will manage (its XAF balance × market rate − its AOA balance = unrealised P&L). Spread revenue is recognised by Phase 7's revaluation job; Phase 6 only records the position. A failed payout reverses rows 4–5 and 3 at the same `r`, then refunds row 1 (fee refunded by corridor policy, default yes).
+`LedgerJournalKind` gains `FX_CONVERT`; `fx_pair_journal_id` is set on both journals of a pair; the Phase 5 per-currency trial balance stays zero at all times because each journal balances in its own currency. The difference between XAF credited to `FX_POSITION:XAF` and the XAF actually wired to buy AOA is the realised spread, which Phase 7 sweeps to `REVENUE:FX_SPREAD:<ccy>` at EOD; in Phase 6 it simply accumulates in the position accounts and is reported on the treasury tile.
 
 ### 4.5 Deployment / infrastructure delta
 
 ```mermaid
-flowchart TB
-  subgraph Fly["Fly.io region fra plus secondary"]
-    HTTP[api http group 3 machines unchanged]
-    WRK[api worker group 3 to 4 shared-cpu-2x<br/>WORKER_QUEUES adds intl:*]
-    SIM[simulator group staging only<br/>new profiles aggregator-payout, fx-vendor]
+flowchart LR
+  subgraph fly["Fly.io cdg"]
+    HTTP["bi-rem-api http machines x2<br/>unchanged"]
+    WRK["bi-rem-api worker machines<br/>2 to 3, WORKER_QUEUES adds intl:*"]
+    EGRESS["Static egress IPs<br/>allow-listed at partners and vendor"]
   end
-  subgraph Managed
-    NEON[(Neon Postgres<br/>16 new tables, fx_rates partitioned monthly)]
-    REDIS[(Upstash Redis 4 GB<br/>fx:latest keys, intl queues)]
-    BUCKET[(S3 compatible bucket<br/>settlement and regulatory files, Object Lock 10 y)]
-    GRAF[Grafana Cloud<br/>International dashboards]
+  subgraph vercel["Vercel cdg1"]
+    WEBV["bi-rem-web<br/>send international routes"]
+    ADMV["bi-rem-admin<br/>intl console routes"]
   end
-  subgraph Partners
-    VENDOR[Market rate vendor HTTPS]
-    PSFTP[Partner SFTP endpoints<br/>allow-listed static egress IPs]
-    PROV[Payout providers Phase 4]
+  subgraph neon["Neon eu-central-1"]
+    DB[("main branch<br/>schema v6, monthly partitions<br/>fx_rates, transfer_tracking_events")]
+    RR[("read replica Phase 5<br/>recon and explorer queries")]
   end
-  WRK --> NEON
-  WRK --> REDIS
-  WRK --> BUCKET
-  WRK --> VENDOR
-  WRK --> PSFTP
-  WRK --> PROV
-  HTTP --> REDIS
-  HTTP --> NEON
-  WRK --> GRAF
-  HTTP --> GRAF
+  subgraph upstash["Upstash Redis"]
+    RD[("fx:rate:*, flags cache,<br/>BullMQ intl:* queues")]
+  end
+  subgraph s3["S3 compatible storage"]
+    BKT[("bi-rem-settlement-prod<br/>Object Lock compliance 7y<br/>settlement and regulatory files")]
+  end
+  subgraph external["External"]
+    VEND["FX data vendor HTTPS"]
+    SFTPS["Partner SFTP<br/>SSH key auth, host key pinned"]
+    PROV["Payout provider APIs<br/>via Phase 4 connectors"]
+  end
+  subgraph staging["Staging additions"]
+    SIM["intl simulators<br/>sftp-sim, fx-vendor-sim,<br/>aggregator-sim"]
+  end
+
+  HTTP --> DB
+  HTTP --> RD
+  WRK --> DB
+  WRK --> RR
+  WRK --> RD
+  WRK --> BKT
+  WRK --> EGRESS
+  EGRESS --> VEND
+  EGRESS --> SFTPS
+  EGRESS --> PROV
+  WEBV --> HTTP
+  ADMV --> HTTP
+  WRK -. staging only .-> SIM
 ```
 
-Infra delta summary: (a) worker group +1 machine (`shared-cpu-2x`) and `WORKER_QUEUES=intl:*,wallet:*,notifications,outbox-relay`; (b) Fly static egress IPs (Phase 4) registered with partner SFTP allow-lists; (c) Neon: `fx_rates` and `transfer_tracking_events` partitioned monthly via the Phase 4 `data-jobs.yml` partition maintenance; (d) S3-compatible bucket prefix `intl/` with Object Lock (compliance mode, 10 years) for settlement and regulatory files; (e) Redis keyspace `fx:*`, `intl:*` (+ ~200 MB); (f) new secrets: `FX_VENDOR_API_KEY` (via Phase 3 credential store, not env), `INTL_TRACKING_HMAC_KEY`, per-partner SFTP private keys (credential store, kind `SSH_KEY`); (g) staging-only `fx-vendor` simulator profile with scripted rate paths (step, drift, outage); (h) Grafana dashboards and 9 new alerts; (i) no new process group — SFTP is client-side only (we pull/push; we do not host an SFTP server in Phase 6, see Q6.4).
+Infrastructure delta list: (1) one additional Fly worker machine and `WORKER_QUEUES` extended with `intl:*`; (2) Neon: monthly partitions for `fx_rates` and `transfer_tracking_events`, `pg_partman`-style maintenance job added to `recon.yml`, read replica used for explorer and recon; (3) Upstash Redis key families `fx:*`, `intl:*` and seven new BullMQ queues; (4) S3-compatible bucket `bi-rem-settlement-<env>` with Object Lock (compliance mode, 7-year retention), separate IAM key with write-once policy, distinct from the Phase 2 documents bucket; (5) partner SFTP egress through the Phase 3 static IPs with known_hosts pinned in the credential vault; (6) new secrets: `INTL_QUOTE_SIGNING_KEY`, `INTL_TRACKING_TOKEN_KEY`, bucket credentials, SFTP private keys and FX vendor key stored as Phase 3 `ProviderCredential` rows (`AuthScheme.SSH_KEY`, `API_KEY_HEADER`); (7) staging simulators `sftp-sim` (atmoz/sftp), `fx-vendor-sim`, `aggregator-sim` added to `infra/docker/docker-compose.yml` under the `simulators` profile; (8) Grafana Cloud dashboards and alert rules; (9) Fly egress allow-list for the vendor host added to the environment docs.
 
 ### 4.6 Design decisions and alternatives rejected
 
-| #   | Decision                                                                                    | Alternative rejected                             | Why                                                                                                                                                                                                        |
-| --- | ------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | **Corridor as the unit of configuration, flags and rollout**, including domestic corridors  | Country-level settings + ad-hoc pair checks      | A corridor carries regulator, licence, partner, limits, markup and SLA — exactly the dimensions that differ per pair; domestic-as-corridor gives Phase 5 and 6 one routing path and one contract migration |
-| D2  | **Quote locking with reservation** (rate + liquidity reserved for the lock window)          | Indicative rate, final rate at execution         | Success criterion 2 and customer trust require the shown receive amount to be the paid amount; reservation prevents overselling thin nostros                                                               |
-| D3  | **Rates mirrored to Redis, vendor called only by the ingest job**                           | Call vendor synchronously per quote              | Quote latency and vendor rate limits; outage isolation (last-good rate + age guard)                                                                                                                        |
-| D4  | **Pegged parities as configuration, not vendor data** for XAF/XOF/CVE/STN                   | Treat all pairs as market                        | Central-bank pegs are legal parities; vendor ticks for these pairs are noise and sometimes wrong; cross rates via EUR are exact                                                                            |
-| D5  | **Pre-funded nostro model** (BI-Rem funds destination float in advance)                     | Post-funded / credit lines with partners         | New entrant without credit standing; pre-funding is how partners onboard remittance companies in these markets; Phase 7 optimises funding                                                                  |
-| D6  | **FX position account pair per corridor currency pair** in Phase 5's single-currency ledger | Multi-currency ledger entries with embedded rate | Keeps Phase 5 invariants (per-currency balance = 0) and gives Phase 7 a clean exposure figure per pair                                                                                                     |
-| D7  | **Settlement by file over SFTP** with CSV first, ISO 20022 optional                         | API-only settlement                              | Partners in these markets reconcile from files; files are the audit artefact regulators ask for                                                                                                            |
-| D8  | **Three-way reconciliation** (ledger, legs, partner statement)                              | Two-way ledger vs partner                        | Phase 4 legs are the bridge that explains most breaks (UNKNOWN, reversals)                                                                                                                                 |
-| D9  | **Regulatory fields captured at transfer time, immutable snapshot**                         | Join to customer profile at report time          | Reports must reflect identity and KYC level **as at** the transfer; profiles change                                                                                                                        |
-| D10 | **Aggregator connector for CV/ST/GW bank payout** built with the Phase 4 SDK                | Direct bank integrations per country             | Three tiny markets; direct bank APIs are rarely available; the SDK route keeps one operational model and preserves the 30-minute connector path                                                            |
-| D11 | **No hosted SFTP server in Phase 6** — BI-Rem pulls from and pushes to partner SFTP         | Host an SFTP endpoint for partners               | Avoids a new internet-facing service and key management surface; revisit in Phase 9 if a partner cannot host (Q6.4)                                                                                        |
-| D12 | **Shadow mode for quotes in production** before friends-and-family                          | Enable quoting with staging rates                | Proves vendor path, egress and rate freshness on production infrastructure with zero customer exposure                                                                                                     |
+| #   | Decision                                                                                                                                                                                                                                                                              | Alternatives rejected                                                                                                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | **Cross-border transfer is a Phase 5 `Transfer` of type `CROSS_BORDER` plus a 1:1 detail row**, not a new aggregate. Reuses saga, idempotency, receipts, limits, notifications, explorer.                                                                                             | Separate `international_transfers` table and saga (duplicated compensation logic, two explorers, two limit systems).                                                                                                                          |
+| D2  | **Two linked single-currency journals through `FX_POSITION` clearing accounts** rather than relaxing the Phase 5 single-currency invariant.                                                                                                                                             | Multi-currency journal with an FX rate column (breaks the per-currency trial balance and every Phase 5 invariant test); recording FX off-ledger.                                                                                              |
+| D3  | **Quote is a signed, persisted row with a reservation**; confirmation references the quote id, the server never trusts client-supplied amounts or rates.                                                                                                                              | Stateless signed token only (no liquidity reservation, no quote explorer); re-pricing at confirmation (violates success criterion 2).                                                                                                           |
+| D4  | **`FxRateProvider` interface with a table-backed implementation now, Phase 7 engine later**, switched per corridor with `fx.corridor.<pair>.enabled`.                                                                                                                                   | Wait for Phase 7 (pushes any cross-border launch past 2027-08-06); build a full engine in Phase 6 (duplicates Phase 7).                                                                                                                       |
+| D5  | **Pre-funded nostro per payout currency and partner** with a liquidity guard at quote time.                                                                                                                                                                                            | Post-paid settlement with partners (not offered by mobile-money partners for new entrants); a single pooled float across currencies (hides exposure, breaks recon).                                                                           |
+| D6  | **Corridor as data** (status, limits, rails, regulator, licence basis) with a state machine and four-eyes, so Phases 12 and 13 launch countries by configuration.                                                                                                                       | Corridor rules in code per country; flags only.                                                                                                                                                                                              |
+| D7  | **Routing with ordered routes and health-gated fallback**, one payout attempt in flight at a time, `externalReference` bound to tracking ref + attempt.                                                                                                                                | Parallel racing of providers; least-cost routing (needs Phase 7 cost data).                                                                                                                                                                   |
+| D8  | **Settlement files generated from the ledger**, never from provider responses, and stored immutably with Object Lock.                                                                                                                                                                  | Files generated from `transfers` rows (can drift from money actually moved); mutable regeneration in place.                                                                                                                                   |
+| D9  | **Reconciliation extends the Phase 5 `recon` module** with a new source and break kinds rather than a parallel module.                                                                                                                                                                 | Second reconciliation engine for cross-border only.                                                                                                                                                                                           |
+| D10 | **Regulatory codes are a versioned catalogue** mapped per regulator, snapshots are immutable JSON, reports are table-driven generators with `layoutVersion`.                                                                                                                             | Free-text purpose; deriving regulatory fields at report time from mutable profiles.                                                                                                                                                           |
+| D11 | **Recipient tracking link is a signed, expiring token resolved server-side**, the page shows masked data only.                                                                                                                                                                         | Public lookup by tracking ref alone (enumerable); requiring the recipient to register.                                                                                                                                                        |
+| D12 | **Rate math in `BIGINT` with `RATE_SCALE = 10^9`** and banker's rounding to the receive currency exponent, documented in `@bi-rem/shared/utils/money.ts`.                                                                                                                                | Decimal strings parsed in each service; floats.                                                                                                                                                                                               |
 
 ---
 
 ## 5. Data Model & Migrations
 
-### 5.1 Assumptions about Phase 5 (to be verified against `phase-05-domestic-transfers.md` at M6.1)
+### 5.1 Context from earlier phases (verified against the repo and sibling plans)
 
-Phase 6 builds on these Phase 5 artefacts: `Transfer` (`transfers`: `id`, `kind` enum `TransferKind { DOMESTIC }`, `senderUserId`, `beneficiaryId`, `sendAmount`/`sendCurrency`, `feeAmount`, `status`, `fundingLegId`, `payoutLegId`, `idempotencyKey`, timestamps), `TransferEvent`, `LedgerAccount` (`ledger_accounts`: `code`, `type` `ASSET|LIABILITY|REVENUE|EXPENSE|CLEARING`, `currency`), `LedgerEntry` (`ledger_entries`: `journalId`, `accountId`, `debit`/`credit` BIGINT, `currency`, `idempotencyKey`), `FeeSchedule`, and limit enforcement reading `KycLevelPolicy`. Where Phase 5 names differ, Phase 6 adapts in M6.1 without changing the model below in substance.
+Phase 1 (in `packages/db/prisma/schema.prisma` today): `User`, `AuditLog`, `FeatureFlag` (`rolloutPercentage`, `rules`), `Setting`, `Outbox`, `Notification*`. Phase 2: `CustomerProfile` (`kycLevel`, `nationality`, `idType`, `idNumberLast4`, `sourceOfFundsCode`, `addressCountryCode`, `dateOfBirth`), `Beneficiary` (`countryCode`, `currency`, `msisdn`, `providerCode`, `bankCode`, `accountNumberEncrypted`, `accountNumberLast4`, `relationship`). Phase 3: `Provider` (`key`, `category`, `countries`, `currencies`), `Connection`, `ProviderCredential`. Phase 4: `ProviderAccount`, `WalletTransaction` (`PULL`/`PUSH`, `parentType`/`parentId`, `externalReference`), `IdempotencyKey`. Phase 5: `Wallet`, `LedgerAccount`, `LedgerJournal`, `LedgerEntry`, `Transfer`, `TransferEvent`, `TransferFeeLine`, `FeeSchedule`, `LimitCounter`, `ReconciliationRun`, `ReconciliationBreak`, enums `TransferType`, `TransferStatus`, `LedgerJournalKind`, `ReconBreakKind`.
 
 ### 5.2 Prisma additions (schema v6, `packages/db/prisma/schema.prisma`)
 
 ```prisma
 // ---------------------------------------------------------------------------
-// Phase 6 — International remittance: enums
+// Phase 6 — International Remittance: enums
 // ---------------------------------------------------------------------------
 
 enum CorridorStatus {
@@ -389,56 +454,105 @@ enum CorridorStatus {
 }
 
 enum LicenceBasis {
-  PRINCIPAL_LICENCE
-  AGENT_OF_BANK
+  OWN_LICENCE
+  AGENT_OF_PAYMENT_INSTITUTION
   AGENT_OF_EMI
+  SPONSOR_BANK
   AGGREGATOR_PARTNER
 
   @@map("licence_basis")
 }
 
-enum PayoutRailType {
+enum PayoutRail {
   MOBILE_MONEY
   BANK_ACCOUNT
 
-  @@map("payout_rail_type")
+  @@map("payout_rail")
 }
 
 enum FxRateSourceKind {
   PEGGED
   MARKET
-  PARTNER_QUOTE
+  MANUAL
+  PARTNER
 
   @@map("fx_rate_source_kind")
 }
 
-enum FxQuoteStatus {
+enum IntlQuoteStatus {
   ACTIVE
   CONSUMED
   EXPIRED
   CANCELLED
 
-  @@map("fx_quote_status")
+  @@map("intl_quote_status")
 }
 
 enum CrossBorderState {
   QUOTED
   FUNDING
   FUNDED
+  FX_LOCKED
   HELD
-  FX_BOOKED
   PAYOUT_PENDING
   PAID_OUT
   REFUNDING
   REFUNDED
   FAILED
-  EXPIRED
+  CANCELLED
 
   @@map("cross_border_state")
 }
 
+enum HoldReason {
+  CORRIDOR_PAUSED
+  MANUAL_REVIEW_RULE
+  LIQUIDITY_LOW
+  PARTNER_UNAVAILABLE
+  PARTNER_UNKNOWN_OUTCOME
+  COMPLIANCE
+  TRAVEL_RULE_INCOMPLETE
+
+  @@map("hold_reason")
+}
+
+enum TrackingEventKind {
+  QUOTE_LOCKED
+  TRANSFER_CREATED
+  FUNDING_REQUESTED
+  FUNDED
+  FX_LOCKED
+  HELD
+  RELEASED
+  REROUTED
+  PAYOUT_SUBMITTED
+  PAYOUT_CONFIRMED
+  PAYOUT_FAILED
+  REFUND_INITIATED
+  REFUNDED
+  CANCELLED
+
+  @@map("tracking_event_kind")
+}
+
+enum RegulatoryCodeKind {
+  PURPOSE
+  SOURCE_OF_FUNDS
+  RELATIONSHIP
+
+  @@map("regulatory_code_kind")
+}
+
+enum NostroAccountStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+
+  @@map("nostro_account_status")
+}
+
 enum PrefundingStatus {
-  DRAFTED
+  DRAFT
   APPROVED
   SENT
   RECEIVED
@@ -451,12 +565,21 @@ enum PrefundingStatus {
 enum SettlementBatchStatus {
   OPEN
   CLOSED
-  FILES_GENERATED
+  GENERATED
   DELIVERED
   ACKNOWLEDGED
   FAILED
 
   @@map("settlement_batch_status")
+}
+
+enum SettlementFileKind {
+  PAYOUT_INSTRUCTIONS
+  SETTLEMENT_STATEMENT
+  PARTNER_STATEMENT
+  PREFUNDING_ADVICE
+
+  @@map("settlement_file_kind")
 }
 
 enum SettlementFileDirection {
@@ -466,299 +589,439 @@ enum SettlementFileDirection {
   @@map("settlement_file_direction")
 }
 
-enum ReconBreakType {
-  MISSING_AT_PARTNER
-  MISSING_IN_LEDGER
-  AMOUNT_MISMATCH
-  FX_MISMATCH
-  STATUS_MISMATCH
-  DUPLICATE
-  FEE_MISMATCH
+enum SettlementFileFormat {
+  CSV
+  PAIN_001
+  CAMT_053
 
-  @@map("recon_break_type")
+  @@map("settlement_file_format")
 }
 
-enum ReconBreakStatus {
-  OPEN
-  INVESTIGATING
-  PENDING_APPROVAL
-  RESOLVED
-  WRITTEN_OFF
+enum SettlementLineMatchStatus {
+  UNMATCHED
+  MATCHED
+  BREAK
 
-  @@map("recon_break_status")
+  @@map("settlement_line_match_status")
+}
+
+enum RegulatoryReportType {
+  BEAC_FX_TRANSFER_DECLARATION
+  BEAC_MONTHLY_TRANSFER_STATISTICS
+  BNA_INBOUND_REMITTANCE
+  BM_INBOUND_REMITTANCE
+  BCV_INBOUND_REMITTANCE
+  BCEAO_INBOUND_REMITTANCE
+  BCSTP_INBOUND_REMITTANCE
+
+  @@map("regulatory_report_type")
 }
 
 enum RegulatoryReportStatus {
+  DRAFT
   GENERATED
   REVIEWED
   SUBMITTED
-  SUPERSEDED
+  ACCEPTED
+  REJECTED
 
   @@map("regulatory_report_status")
 }
 
-// Phase 4 enum gains one value (expand-safe):
-// enum ConnectorKind { MOBILE_MONEY BANK CASH_AGENT AGGREGATOR }
-// Phase 5 enum gains one value:
-// enum TransferKind { DOMESTIC CROSS_BORDER }
+// Enum value additions to earlier phases (ALTER TYPE ... ADD VALUE, see 5.4):
+//   TransferType      += CROSS_BORDER
+//   TransferStatus    += HELD
+//   LedgerJournalKind += FX_CONVERT
+//   ReconBreakKind    += MISSING_AT_PARTNER, MISSING_IN_LEDGER, AMOUNT_MISMATCH,
+//                        FX_MISMATCH, STATUS_MISMATCH, DUPLICATE, FEE_MISMATCH
+//   ConnectorKind     += AGGREGATOR            (Phase 4)
+//   AuthScheme        += SSH_KEY               (Phase 3)
 
 // ---------------------------------------------------------------------------
-// Corridors & routing
+// Corridors and routing
 // ---------------------------------------------------------------------------
 
-/// One send-country → receive-country pair. Domestic pairs (CM→CM) are corridors too.
+/// Ordered country pair. Key is `<send>-<recv>` lower-case, e.g. "cm-ga"; domestic
+/// corridors ("gh-gh") exist so every transfer has a corridor dimension.
 model Corridor {
-  id                      String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  /// Immutable key "<send>-<recv>" lower-case, e.g. "cm-ga"; also used in feature-flag keys.
-  key                     String         @unique @db.VarChar(8)
-  sendCountryCode         String         @map("send_country_code") @db.Char(2)
-  recvCountryCode         String         @map("recv_country_code") @db.Char(2)
-  sendCurrency            String         @map("send_currency") @db.Char(3)
-  recvCurrency            String         @map("recv_currency") @db.Char(3)
-  isDomestic              Boolean        @default(false) @map("is_domestic")
-  status                  CorridorStatus @default(DRAFT)
-  /// Regulator of the send side, e.g. "BEAC", "BNA", "BM", "BCV", "BCEAO", "BCSTP".
-  regulatorCode           String         @map("regulator_code") @db.VarChar(16)
-  licenceBasis            LicenceBasis   @map("licence_basis")
-  /// Free text: "Agent of <Bank> under COBAC payment-institution licence n° …".
-  partnerModel            String?        @map("partner_model") @db.VarChar(300)
-  licenceEvidenceDocumentId String?      @map("licence_evidence_document_id") @db.Uuid
-  /// Minor units of sendCurrency; intersected at runtime with the sender's KycLevelPolicy.
-  singleTxnMaxMinor       BigInt         @map("single_txn_max_minor")
-  singleTxnMinMinor       BigInt         @default(0) @map("single_txn_min_minor")
-  dailyLimitMinor         BigInt         @map("daily_limit_minor")
-  monthlyLimitMinor       BigInt         @map("monthly_limit_minor")
-  /// Phase 5 fee schedule applied on the send side.
-  feeScheduleId           String         @map("fee_schedule_id") @db.Uuid
-  /// Basis points subtracted from mid to form the customer rate. 0 for domestic.
-  fxMarkupBps             Int            @default(0) @map("fx_markup_bps")
-  quoteLockSeconds        Int            @default(120) @map("quote_lock_seconds")
-  fxMaxRateAgeSeconds     Int            @default(300) @map("fx_max_rate_age_seconds")
-  fxMaxDriftBps           Int            @default(150) @map("fx_max_drift_bps")
-  /// Expected payout SLA used for expectedPayoutAt and the "delayed" tracking event.
-  payoutSlaMinutes        Int            @default(30) @map("payout_sla_minutes")
-  /// Local time cut-off for settlement batches, "16:00", with IANA zone.
-  settlementCutoff        String         @default("16:00") @map("settlement_cutoff") @db.VarChar(5)
-  settlementTimezone      String         @default("Africa/Douala") @map("settlement_timezone") @db.VarChar(64)
-  /// Required compliance fields and manual-review rules, validated by Zod (CorridorComplianceRules).
-  complianceRules         Json           @default("{}") @map("compliance_rules")
-  /// Purpose codes allowed on this corridor (subset of transfer_purpose_codes.code).
-  allowedPurposeCodes     String[]       @default([]) @map("allowed_purpose_codes") @db.VarChar(32)
-  requiresManualReviewAboveMinor BigInt? @map("requires_manual_review_above_minor")
-  createdById             String?        @map("created_by_id") @db.Uuid
-  approvedById            String?        @map("approved_by_id") @db.Uuid
-  approvedAt              DateTime?      @map("approved_at") @db.Timestamptz(6)
-  createdAt               DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
-  retiredAt               DateTime?      @map("retired_at") @db.Timestamptz(6)
+  id                     String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key                    String         @unique @db.VarChar(8)
+  sendCountryCode        String         @map("send_country_code") @db.Char(2)
+  recvCountryCode        String         @map("recv_country_code") @db.Char(2)
+  sendCurrency           String         @map("send_currency") @db.Char(3)
+  recvCurrency           String         @map("recv_currency") @db.Char(3)
+  status                 CorridorStatus @default(DRAFT)
+  isDomestic             Boolean        @default(false) @map("is_domestic")
+  /// Limits in send currency minor units; null = inherit KycLevelPolicy only.
+  minPerTransferMinor    BigInt         @map("min_per_transfer_minor")
+  maxPerTransferMinor    BigInt         @map("max_per_transfer_minor")
+  dailyLimitMinor        BigInt?        @map("daily_limit_minor")
+  monthlyLimitMinor      BigInt?        @map("monthly_limit_minor")
+  /// Phase 2 KycLevel name required to send on this corridor.
+  minKycLevel            String         @default("LEVEL_1") @map("min_kyc_level") @db.VarChar(16)
+  /// Recent-MFA threshold in send currency minor units.
+  mfaThresholdMinor      BigInt?        @map("mfa_threshold_minor")
+  feeScheduleId          String?        @map("fee_schedule_id") @db.Uuid
+  fxMarkupBps            Int            @default(0) @map("fx_markup_bps")
+  quoteLockSeconds       Int            @default(180) @map("quote_lock_seconds")
+  quoteGraceSeconds      Int            @default(30) @map("quote_grace_seconds")
+  quoteGraceMaxDriftBps  Int            @default(25) @map("quote_grace_max_drift_bps")
+  /// "HH:MM" local time at which the settlement batch closes.
+  cutoffLocalTime        String         @default("16:00") @map("cutoff_local_time") @db.VarChar(5)
+  timezone               String         @default("Africa/Douala") @db.VarChar(64)
+  valueDateOffsetDays    Int            @default(1) @map("value_date_offset_days")
+  slaMinutes             Int            @default(30) @map("sla_minutes")
+  /// e.g. ["purposeCode","sourceOfFundsCode","relationshipCode","declaration"].
+  requiredFields         String[]       @default([]) @map("required_fields")
+  /// Rule list evaluated before payout: [{ rule: "AMOUNT_ABOVE", minor: 500000 }, { rule: "FIRST_TRANSFER_TO_COUNTRY" }, ...].
+  complianceRules        Json           @default("[]") @map("compliance_rules")
+  regulatorCode          String         @map("regulator_code") @db.VarChar(16)
+  licenceBasis           LicenceBasis   @map("licence_basis")
+  /// Phase 3 Provider acting as licensed principal / sponsor for this corridor.
+  partnerProviderId      String?        @map("partner_provider_id") @db.Uuid
+  licenceEvidenceKey     String?        @map("licence_evidence_key") @db.VarChar(255)
+  /// Customer-facing disclosures per locale: { fr: "...", pt: "..." }.
+  disclosures            Json           @default("{}")
+  createdById            String?        @map("created_by_id") @db.Uuid
+  approvedById           String?        @map("approved_by_id") @db.Uuid
+  approvedAt             DateTime?      @map("approved_at") @db.Timestamptz(6)
+  createdAt              DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  routes        CorridorRoute[]
-  quotes        FxQuote[]
-  nostroLinks   CorridorNostro[]
-  transfers     Transfer[]
+  routes     CorridorRoute[]
+  quotes     IntlQuote[]
+  details    TransferCrossBorderDetail[]
+  reports    RegulatoryReportItem[]
 
-  @@unique([sendCountryCode, recvCountryCode])
+  @@unique([sendCountryCode, recvCountryCode, sendCurrency, recvCurrency])
   @@index([status])
-  @@index([recvCountryCode, status])
+  @@index([sendCountryCode, status])
   @@map("corridors")
 }
 
-/// Ordered payout rails for a corridor and beneficiary type.
+/// Ordered payout option for a corridor.
 model CorridorRoute {
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  corridorId      String         @map("corridor_id") @db.Uuid
-  railType        PayoutRailType @map("rail_type")
-  /// Phase 3 provider used for the payout leg (wallet connector or aggregator).
-  providerId      String         @map("provider_id") @db.Uuid
-  /// Phase 4 float / nostro-linked account the payout is debited from.
-  providerAccountId String       @map("provider_account_id") @db.Uuid
-  nostroAccountId String         @map("nostro_account_id") @db.Uuid
-  priority        Int            @default(100)
-  /// 0-100 weight among routes of equal priority (A/B or load split).
-  weight          Int            @default(100)
-  isEnabled       Boolean        @default(true) @map("is_enabled")
-  /// Partner contract reference and per-route payout fee (minor units of recvCurrency).
-  partnerContractRef String?     @map("partner_contract_ref") @db.VarChar(100)
-  partnerFeeMinor BigInt         @default(0) @map("partner_fee_minor")
-  maxAmountMinor  BigInt?        @map("max_amount_minor")
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  corridorId         String     @map("corridor_id") @db.Uuid
+  /// Phase 3 Provider used for the payout leg (mobile-money operator or aggregator).
+  providerId         String     @map("provider_id") @db.Uuid
+  rail               PayoutRail
+  nostroAccountId    String     @map("nostro_account_id") @db.Uuid
+  priority           Int        @default(100)
+  enabled            Boolean    @default(true)
+  maxPerTransferMinor BigInt?   @map("max_per_transfer_minor")
+  /// Recipient-side fee disclosure in recv currency minor units, informational.
+  recipientFeeMinor  BigInt?    @map("recipient_fee_minor")
+  /// Partner contract / agreement reference, no secrets.
+  contractRef        String?    @map("contract_ref") @db.VarChar(128)
+  displayName        String     @map("display_name") @db.VarChar(120)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  corridor        Corridor        @relation(fields: [corridorId], references: [id], onDelete: Cascade)
-  provider        Provider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
-  providerAccount ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Restrict)
-  nostro          NostroAccount   @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
+  corridor Corridor      @relation(fields: [corridorId], references: [id], onDelete: Cascade)
+  nostro   NostroAccount @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
 
-  @@unique([corridorId, railType, providerId])
-  @@index([corridorId, railType, priority])
+  @@unique([corridorId, providerId, rail])
+  @@index([corridorId, enabled, priority])
   @@map("corridor_routes")
 }
 
 // ---------------------------------------------------------------------------
-// FX
+// FX rates and quotes (Phase 6 table-backed FxRateProvider)
 // ---------------------------------------------------------------------------
 
 model FxRateSource {
-  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  /// "pegged", "market-primary", "partner-unitel".
-  key         String           @unique @db.VarChar(32)
-  kind        FxRateSourceKind
-  /// Phase 3 connection holding base URL, auth and API key (null for PEGGED).
-  connectionId String?         @map("connection_id") @db.Uuid
-  pollIntervalSeconds Int      @default(60) @map("poll_interval_seconds")
-  /// Pairs served, e.g. ["EUR/XAF","EUR/AOA"]; validated as ISO codes.
-  pairs       String[]         @default([]) @db.VarChar(7)
-  priority    Int              @default(100)
-  isEnabled   Boolean          @default(true) @map("is_enabled")
-  lastSuccessAt DateTime?      @map("last_success_at") @db.Timestamptz(6)
-  lastError   String?          @map("last_error") @db.VarChar(500)
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key             String           @unique @db.VarChar(32)
+  kind            FxRateSourceKind
+  /// Phase 3 Provider (category FX) for MARKET and PARTNER sources.
+  providerId      String?          @map("provider_id") @db.Uuid
+  /// Pairs served, e.g. ["EUR/AOA","EUR/MZN","EUR/USD"].
+  pairs           String[]         @default([])
+  pollSeconds     Int              @default(60) @map("poll_seconds")
+  /// Ticks older than this are stale for quoting; null = never stale (PEGGED).
+  maxAgeSeconds   Int?             @map("max_age_seconds")
+  maxDeviationBps Int              @default(300) @map("max_deviation_bps")
+  enabled         Boolean          @default(false)
+  lastTickAt      DateTime?        @map("last_tick_at") @db.Timestamptz(6)
+  lastError       String?          @map("last_error") @db.VarChar(300)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   rates FxRate[]
 
   @@map("fx_rate_sources")
 }
 
-/// Append-only rate ticks (partitioned monthly by captured_at in SQL). Rates are stored as
-/// scaled integers: rate = rateScaled / 10^rateScale, never floats.
+/// Rate tick. rate_num is units of quote currency per 1 unit of base, scaled by 10^9.
+/// Partitioned monthly by captured_at in SQL (see 5.4).
 model FxRate {
-  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sourceId     String       @map("source_id") @db.Uuid
-  baseCurrency String       @map("base_currency") @db.Char(3)
-  quoteCurrency String      @map("quote_currency") @db.Char(3)
-  midScaled    BigInt       @map("mid_scaled")
-  bidScaled    BigInt?      @map("bid_scaled")
-  askScaled    BigInt?      @map("ask_scaled")
-  rateScale    Int          @default(8) @map("rate_scale")
-  capturedAt   DateTime     @map("captured_at") @db.Timestamptz(6)
-  /// Vendor timestamp when provided.
-  sourceTimestamp DateTime? @map("source_timestamp") @db.Timestamptz(6)
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceId      String       @map("source_id") @db.Uuid
+  baseCurrency  String       @map("base_currency") @db.Char(3)
+  quoteCurrency String       @map("quote_currency") @db.Char(3)
+  rateNum       BigInt       @map("rate_num")
+  bidNum        BigInt?      @map("bid_num")
+  askNum        BigInt?      @map("ask_num")
+  capturedAt    DateTime     @map("captured_at") @db.Timestamptz(6)
+  validUntil    DateTime?    @map("valid_until") @db.Timestamptz(6)
+  /// MANUAL only: maker and checker.
+  enteredById   String?      @map("entered_by_id") @db.Uuid
+  approvedById  String?      @map("approved_by_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   source FxRateSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
 
   @@index([baseCurrency, quoteCurrency, capturedAt(sort: Desc)])
-  @@index([capturedAt])
+  @@index([sourceId, capturedAt])
   @@map("fx_rates")
 }
 
-/// A customer-facing locked quote; bound to at most one transfer.
-model FxQuote {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  corridorId        String        @map("corridor_id") @db.Uuid
-  userId            String?       @map("user_id") @db.Uuid
-  status            FxQuoteStatus @default(ACTIVE)
-  sendAmount        BigInt        @map("send_amount")
-  sendCurrency      String        @map("send_currency") @db.Char(3)
-  feeAmount         BigInt        @map("fee_amount")
-  recvAmount        BigInt        @map("recv_amount")
-  recvCurrency      String        @map("recv_currency") @db.Char(3)
-  /// Customer rate = recv per 1 send unit, scaled by 10^rateScale.
-  customerRateScaled BigInt       @map("customer_rate_scaled")
-  midRateScaled     BigInt        @map("mid_rate_scaled")
-  rateScale         Int           @default(8) @map("rate_scale")
-  markupBps         Int           @map("markup_bps")
-  /// Ids of the fx_rates ticks used (direct or the two legs of a cross rate).
-  rateTickIds       String[]      @default([]) @map("rate_tick_ids") @db.Uuid
-  nostroAccountId   String        @map("nostro_account_id") @db.Uuid
-  /// Liquidity reserved on the nostro (minor units of recvCurrency) while ACTIVE/CONSUMED.
-  reservedMinor     BigInt        @default(0) @map("reserved_minor")
-  lockedUntil       DateTime      @map("locked_until") @db.Timestamptz(6)
-  shadow            Boolean       @default(false)
-  consumedAt        DateTime?     @map("consumed_at") @db.Timestamptz(6)
-  correlationId     String?       @map("correlation_id") @db.VarChar(128)
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+/// Customer-facing locked quote: fee + FX + liquidity reservation for one corridor.
+model IntlQuote {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  corridorId          String          @map("corridor_id") @db.Uuid
+  userId              String          @map("user_id") @db.Uuid
+  beneficiaryId       String?         @map("beneficiary_id") @db.Uuid
+  routeId             String?         @map("route_id") @db.Uuid
+  status              IntlQuoteStatus @default(ACTIVE)
+  sendCurrency        String          @map("send_currency") @db.Char(3)
+  recvCurrency        String          @map("recv_currency") @db.Char(3)
+  sendAmountMinor     BigInt          @map("send_amount_minor")
+  feeTotalMinor       BigInt          @map("fee_total_minor")
+  taxTotalMinor       BigInt          @default(0) @map("tax_total_minor")
+  totalDebitMinor     BigInt          @map("total_debit_minor")
+  recvAmountMinor     BigInt          @map("recv_amount_minor")
+  /// Mid rate used and the customer rate after markup, both send->recv scaled 10^9.
+  midRateNum          BigInt          @map("mid_rate_num")
+  customerRateNum     BigInt          @map("customer_rate_num")
+  markupBps           Int             @map("markup_bps")
+  /// Derivation path, e.g. ["XAF/EUR:pegged","EUR/AOA:market@<fxRateId>"].
+  rateDerivation      Json            @map("rate_derivation")
+  fxRateId            String?         @map("fx_rate_id") @db.Uuid
+  /// Phase 7 engine quote id once a corridor is on the engine.
+  engineQuoteRef      String?         @map("engine_quote_ref") @db.VarChar(64)
+  /// Phase 5 FeeEngine quote token for traceability.
+  feeQuoteId          String?         @map("fee_quote_id") @db.VarChar(64)
+  feeLines            Json            @map("fee_lines")
+  reservationId       String?         @unique @map("reservation_id") @db.Uuid
+  shadow              Boolean         @default(false)
+  /// HMAC-SHA256(INTL_QUOTE_SIGNING_KEY, canonical quote fields).
+  signature           String          @db.VarChar(128)
+  idempotencyKeyId    String?         @map("idempotency_key_id") @db.Uuid
+  lockedUntil         DateTime        @map("locked_until") @db.Timestamptz(6)
+  consumedAt          DateTime?       @map("consumed_at") @db.Timestamptz(6)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  corridor Corridor      @relation(fields: [corridorId], references: [id], onDelete: Restrict)
-  nostro   NostroAccount @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
-  transfer Transfer?
+  corridor    Corridor          @relation(fields: [corridorId], references: [id], onDelete: Restrict)
+  reservation NostroReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  detail      TransferCrossBorderDetail?
 
+  @@index([userId, createdAt(sort: Desc)])
   @@index([status, lockedUntil])
-  @@index([userId, createdAt])
   @@index([corridorId, createdAt])
-  @@map("fx_quotes")
+  @@map("intl_quotes")
+}
+
+// ---------------------------------------------------------------------------
+// Regulatory codes and cross-border detail
+// ---------------------------------------------------------------------------
+
+/// Versioned catalogue of purpose / source-of-funds / relationship codes.
+model RegulatoryCode {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind             RegulatoryCodeKind
+  code             String             @db.VarChar(32)
+  /// ISO 20022 ExternalPurpose1Code where one exists (e.g. SALA, STDY, MDCS).
+  isoCode          String?            @map("iso_code") @db.VarChar(4)
+  /// Regulator nomenclature: { BEAC: "...", BNA: "...", BM: "..." }.
+  regulatorMapping Json               @default("{}") @map("regulator_mapping")
+  labels           Json
+  /// Empty = all corridors.
+  allowedCorridors String[]           @default([]) @map("allowed_corridors")
+  requiresEvidence Boolean            @default(false) @map("requires_evidence")
+  sortOrder        Int                @default(100) @map("sort_order")
+  active           Boolean            @default(true)
+  version          Int                @default(1)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([kind, code])
+  @@map("regulatory_codes")
+}
+
+/// 1:1 extension of Phase 5 transfers for type CROSS_BORDER.
+model TransferCrossBorderDetail {
+  transferId             String           @id @map("transfer_id") @db.Uuid
+  corridorId             String           @map("corridor_id") @db.Uuid
+  quoteId                String           @unique @map("quote_id") @db.Uuid
+  routeId                String?          @map("route_id") @db.Uuid
+  nostroAccountId        String?          @map("nostro_account_id") @db.Uuid
+  state                  CrossBorderState @default(QUOTED)
+  trackingRef            String           @unique @map("tracking_ref") @db.VarChar(16)
+  sendCurrency           String           @map("send_currency") @db.Char(3)
+  recvCurrency           String           @map("recv_currency") @db.Char(3)
+  sendAmountMinor        BigInt           @map("send_amount_minor")
+  recvAmountMinor        BigInt           @map("recv_amount_minor")
+  customerRateNum        BigInt           @map("customer_rate_num")
+  midRateNum             BigInt           @map("mid_rate_num")
+  markupBps              Int              @map("markup_bps")
+  purposeCode            String           @map("purpose_code") @db.VarChar(32)
+  sourceOfFundsCode      String           @map("source_of_funds_code") @db.VarChar(32)
+  relationshipCode       String?          @map("relationship_code") @db.VarChar(32)
+  declarationAcceptedAt  DateTime         @map("declaration_accepted_at") @db.Timestamptz(6)
+  /// Immutable: { idType, idLast4, nationality, residenceCountry, kycLevel, birthYear }.
+  senderIdentitySnapshot Json             @map("sender_identity_snapshot")
+  /// Immutable: { name, country, rail, providerKey, accountMask }.
+  recipientSnapshot      Json             @map("recipient_snapshot")
+  holdReason             HoldReason?      @map("hold_reason")
+  holdSlaAt              DateTime?        @map("hold_sla_at") @db.Timestamptz(6)
+  heldAt                 DateTime?        @map("held_at") @db.Timestamptz(6)
+  releasedById           String?          @map("released_by_id") @db.Uuid
+  sendJournalId          String?          @unique @map("send_journal_id") @db.Uuid
+  recvJournalId          String?          @unique @map("recv_journal_id") @db.Uuid
+  payoutAttempts         Int              @default(0) @map("payout_attempts")
+  providerTransactionId  String?          @map("provider_transaction_id") @db.VarChar(128)
+  estimatedPayoutAt      DateTime?        @map("estimated_payout_at") @db.Timestamptz(6)
+  paidOutAt              DateTime?        @map("paid_out_at") @db.Timestamptz(6)
+  settlementBatchId      String?          @map("settlement_batch_id") @db.Uuid
+  /// SHA-256 of the current recipient tracking token (rotatable).
+  trackingTokenHash      String?          @map("tracking_token_hash") @db.VarChar(64)
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  transfer  Transfer         @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  corridor  Corridor         @relation(fields: [corridorId], references: [id], onDelete: Restrict)
+  quote     IntlQuote        @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  batch     SettlementBatch? @relation(fields: [settlementBatchId], references: [id], onDelete: SetNull)
+  tracking  TransferTrackingEvent[]
+  reportItems RegulatoryReportItem[]
+
+  @@index([corridorId, state, createdAt])
+  @@index([state, holdSlaAt])
+  @@index([settlementBatchId])
+  @@map("transfer_cross_border_details")
+}
+
+/// Append-only customer-facing timeline (partitioned monthly by created_at).
+model TransferTrackingEvent {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transferId    String            @map("transfer_id") @db.Uuid
+  kind          TrackingEventKind
+  fromState     CrossBorderState? @map("from_state")
+  toState       CrossBorderState  @map("to_state")
+  /// Customer-safe i18n copy key, e.g. "intl.timeline.payout_submitted".
+  copyKey       String            @map("copy_key") @db.VarChar(64)
+  /// Redacted context: providerKey, attempt, holdReason, no PII.
+  context       Json?
+  actorUserId   String?           @map("actor_user_id") @db.Uuid
+  journalId     String?           @map("journal_id") @db.Uuid
+  walletTransactionId String?     @map("wallet_transaction_id") @db.Uuid
+  correlationId String?           @map("correlation_id") @db.VarChar(128)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  detail TransferCrossBorderDetail @relation(fields: [transferId], references: [transferId], onDelete: Cascade)
+
+  @@index([transferId, createdAt])
+  @@index([kind, createdAt])
+  @@map("transfer_tracking_events")
 }
 
 // ---------------------------------------------------------------------------
 // Nostro / pre-funding
 // ---------------------------------------------------------------------------
 
-/// BI-Rem's pre-funded position with a payout partner in one currency.
 model NostroAccount {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  /// "nostro-aoa-unitel".
-  code             String   @unique @db.VarChar(48)
-  partnerName      String   @map("partner_name") @db.VarChar(120)
-  countryCode      String   @map("country_code") @db.Char(2)
-  currency         String   @db.Char(3)
-  /// Phase 5 ledger asset account carrying the balance.
-  ledgerAccountId  String   @unique @map("ledger_account_id") @db.Uuid
-  /// Below this available liquidity, quotes are refused and treasury alerted.
-  minReserveMinor  BigInt   @default(0) @map("min_reserve_minor")
-  targetBalanceMinor BigInt? @map("target_balance_minor")
-  /// Partner bank details for wires, encrypted; last4 for display.
-  bankDetailsEncrypted String? @map("bank_details_encrypted")
-  bankDetailsLast4 String?  @map("bank_details_last4") @db.VarChar(4)
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// e.g. "unitel-ao-aoa", "sponsor-cm-xaf".
+  key                  String              @unique @db.VarChar(64)
+  currency             String              @db.Char(3)
+  countryCode          String              @map("country_code") @db.Char(2)
+  /// Phase 3 Provider holding the funds (operator, aggregator or bank).
+  partnerProviderId    String              @map("partner_provider_id") @db.Uuid
+  /// Phase 5 ledger account ASSET:NOSTRO:<key>:<ccy>.
+  ledgerAccountId      String              @unique @map("ledger_account_id") @db.Uuid
+  /// Partner bank account / IBAN, encrypted with ENCRYPTION_KEY; mask for display.
+  bankAccountEncrypted String?             @map("bank_account_encrypted")
+  bankAccountMask      String?             @map("bank_account_mask") @db.VarChar(16)
+  minReserveMinor      BigInt              @default(0) @map("min_reserve_minor")
+  alertThresholdMinor  BigInt              @default(0) @map("alert_threshold_minor")
+  targetBalanceMinor   BigInt?             @map("target_balance_minor")
+  status               NostroAccountStatus @default(ACTIVE)
+  /// Settlement file configuration for this partner.
+  settlementFormat     SettlementFileFormat @default(CSV) @map("settlement_format")
+  statementFormat      SettlementFileFormat? @map("statement_format")
+  sftpConnectionId     String?             @map("sftp_connection_id") @db.Uuid
+  sftpOutboundPath     String?             @map("sftp_outbound_path") @db.VarChar(255)
+  sftpInboundPath      String?             @map("sftp_inbound_path") @db.VarChar(255)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  providerAccounts NostroProviderAccount[]
-  corridors        CorridorNostro[]
   routes           CorridorRoute[]
-  quotes           FxQuote[]
+  providerAccounts NostroProviderAccount[]
+  reservations     NostroReservation[]
   prefundings      PrefundingInstruction[]
-  settlementBatches SettlementBatch[]
-  reconRuns        ReconciliationRun[]
+  batches          SettlementBatch[]
 
-  @@index([currency, isActive])
+  @@index([currency, status])
   @@map("nostro_accounts")
 }
 
-/// Which Phase 4 float wallets draw down this nostro.
+/// Links Phase 4 provider float wallets that back a nostro.
 model NostroProviderAccount {
   nostroAccountId   String   @map("nostro_account_id") @db.Uuid
   providerAccountId String   @map("provider_account_id") @db.Uuid
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  nostro          NostroAccount   @relation(fields: [nostroAccountId], references: [id], onDelete: Cascade)
-  providerAccount ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Restrict)
+  nostro NostroAccount @relation(fields: [nostroAccountId], references: [id], onDelete: Cascade)
 
   @@id([nostroAccountId, providerAccountId])
+  @@unique([providerAccountId])
   @@map("nostro_provider_accounts")
 }
 
-model CorridorNostro {
-  corridorId      String  @map("corridor_id") @db.Uuid
-  nostroAccountId String  @map("nostro_account_id") @db.Uuid
-  isPrimary       Boolean @default(true) @map("is_primary")
+/// Liquidity reservation held by an active quote or an in-flight transfer.
+model NostroReservation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nostroAccountId String    @map("nostro_account_id") @db.Uuid
+  amountMinor     BigInt    @map("amount_minor")
+  currency        String    @db.Char(3)
+  transferId      String?   @map("transfer_id") @db.Uuid
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  releasedAt      DateTime? @map("released_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  corridor Corridor      @relation(fields: [corridorId], references: [id], onDelete: Cascade)
-  nostro   NostroAccount @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
+  nostro NostroAccount @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
+  quote  IntlQuote?
 
-  @@id([corridorId, nostroAccountId])
-  @@map("corridor_nostros")
+  @@index([nostroAccountId, releasedAt, expiresAt])
+  @@map("nostro_reservations")
 }
 
 model PrefundingInstruction {
-  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nostroAccountId  String           @map("nostro_account_id") @db.Uuid
-  status           PrefundingStatus @default(DRAFTED)
-  expectedMinor    BigInt           @map("expected_minor")
-  receivedMinor    BigInt?          @map("received_minor")
-  currency         String           @db.Char(3)
-  /// "BANK_WIRE" | "FLOAT_TRANSFER" (Phase 4 FLOAT_TRANSFER leg) | "PARTNER_CREDIT".
-  method           String           @db.VarChar(24)
-  bankReference    String?          @map("bank_reference") @db.VarChar(100)
-  walletTransactionId String?       @map("wallet_transaction_id") @db.Uuid
-  ledgerJournalId  String?          @map("ledger_journal_id") @db.Uuid
-  requestedById    String           @map("requested_by_id") @db.Uuid
-  approvedById     String?          @map("approved_by_id") @db.Uuid
-  valueDate        DateTime?        @map("value_date") @db.Date
-  notes            String?
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nostroAccountId     String           @map("nostro_account_id") @db.Uuid
+  status              PrefundingStatus @default(DRAFT)
+  /// WIRE or FLOAT_TRANSFER.
+  method              String           @db.VarChar(16)
+  expectedMinor       BigInt           @map("expected_minor")
+  receivedMinor       BigInt?          @map("received_minor")
+  currency            String           @db.Char(3)
+  /// Funding-side amount and currency actually paid (e.g. XAF wired to buy AOA).
+  fundingAmountMinor  BigInt?          @map("funding_amount_minor")
+  fundingCurrency     String?          @map("funding_currency") @db.Char(3)
+  fundingRateNum      BigInt?          @map("funding_rate_num")
+  bankReference       String?          @map("bank_reference") @db.VarChar(128)
+  receiveJournalId    String?          @unique @map("receive_journal_id") @db.Uuid
+  fundingJournalId    String?          @unique @map("funding_journal_id") @db.Uuid
+  createdById         String           @map("created_by_id") @db.Uuid
+  approvedById        String?          @map("approved_by_id") @db.Uuid
+  approvedAt          DateTime?        @map("approved_at") @db.Timestamptz(6)
+  sentAt              DateTime?        @map("sent_at") @db.Timestamptz(6)
+  receivedAt          DateTime?        @map("received_at") @db.Timestamptz(6)
+  note                String?          @db.VarChar(500)
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   nostro NostroAccount @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
 
@@ -767,98 +1030,7 @@ model PrefundingInstruction {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-border transfer details & tracking
-// ---------------------------------------------------------------------------
-
-/// Reference list of purpose codes (ISO 20022 ExternalPurpose1Code subset) with regulator mappings.
-model TransferPurposeCode {
-  code          String   @id @db.VarChar(32)
-  labelEn       String   @map("label_en") @db.VarChar(120)
-  labelFr       String   @map("label_fr") @db.VarChar(120)
-  labelPt       String   @map("label_pt") @db.VarChar(120)
-  /// { "BEAC": "11", "BNA": "FAM", "BM": "R01" } — regulator nomenclature.
-  regulatorMapping Json  @default("{}") @map("regulator_mapping")
-  minKycLevel   KycLevel @default(LEVEL_1) @map("min_kyc_level")
-  isActive      Boolean  @default(true) @map("is_active")
-  sortOrder     Int      @default(100) @map("sort_order")
-
-  @@map("transfer_purpose_codes")
-}
-
-/// 1:1 extension of Phase 5 transfers for cross-border transfers. Snapshots are immutable.
-model TransferCrossBorderDetail {
-  transferId          String           @id @map("transfer_id") @db.Uuid
-  corridorId          String           @map("corridor_id") @db.Uuid
-  fxQuoteId           String           @unique @map("fx_quote_id") @db.Uuid
-  state               CrossBorderState @default(QUOTED)
-  holdReason          String?          @map("hold_reason") @db.VarChar(64)
-  routeId             String?          @map("route_id") @db.Uuid
-  routingReason       String?          @map("routing_reason") @db.VarChar(64)
-  recvAmount          BigInt           @map("recv_amount")
-  recvCurrency        String           @map("recv_currency") @db.Char(3)
-  customerRateScaled  BigInt           @map("customer_rate_scaled")
-  rateScale           Int              @default(8) @map("rate_scale")
-  purposeCode         String           @map("purpose_code") @db.VarChar(32)
-  sourceOfFundsCode   String           @map("source_of_funds_code") @db.VarChar(32)
-  relationshipCode    String?          @map("relationship_code") @db.VarChar(32)
-  /// { idType, idLast4, nationality, kycLevel, residenceCountry, dateOfBirthYear } as at creation.
-  senderIdentitySnapshot Json          @map("sender_identity_snapshot")
-  /// { displayName, countryCode, railType, providerCode, accountLast4, bankCode } as at creation.
-  recipientSnapshot   Json             @map("recipient_snapshot")
-  declaredByUserAt    DateTime         @map("declared_by_user_at") @db.Timestamptz(6)
-  /// Set when the transfer is included in a regulatory report.
-  regulatoryReportId  String?          @map("regulatory_report_id") @db.Uuid
-  settlementBatchId   String?          @map("settlement_batch_id") @db.Uuid
-  fxJournalId         String?          @map("fx_journal_id") @db.Uuid
-  fxUnwindJournalId   String?          @map("fx_unwind_journal_id") @db.Uuid
-  expectedPayoutAt    DateTime?        @map("expected_payout_at") @db.Timestamptz(6)
-  paidOutAt           DateTime?        @map("paid_out_at") @db.Timestamptz(6)
-  refundedAt          DateTime?        @map("refunded_at") @db.Timestamptz(6)
-  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Restrict)
-  quote    FxQuote  @relation(fields: [fxQuoteId], references: [id], onDelete: Restrict)
-  trackingEvents TransferTrackingEvent[]
-
-  @@index([state, updatedAt])
-  @@index([corridorId, createdAt])
-  @@index([settlementBatchId])
-  @@index([regulatoryReportId])
-  @@map("transfer_cross_border_details")
-}
-
-/// Customer-visible timeline (partitioned monthly by created_at in SQL).
-model TransferTrackingEvent {
-  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  transferId  String           @map("transfer_id") @db.Uuid
-  state       CrossBorderState
-  /// Template key for the customer-facing message, e.g. "tracking.payout_pending".
-  messageKey  String           @map("message_key") @db.VarChar(64)
-  /// Non-sensitive variables for the message (provider display name, ETA).
-  variables   Json             @default("{}")
-  visibleToRecipient Boolean   @default(true) @map("visible_to_recipient")
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  detail TransferCrossBorderDetail @relation(fields: [transferId], references: [transferId], onDelete: Cascade)
-
-  @@index([transferId, createdAt])
-  @@index([createdAt])
-  @@map("transfer_tracking_events")
-}
-
-// Phase 5 model Transfer gains (all nullable, expand-only):
-//   corridorId   String?  @map("corridor_id") @db.Uuid     // FK -> corridors; NOT NULL in Phase 9 W1 contract
-//   fxQuoteId    String?  @unique @map("fx_quote_id") @db.Uuid
-//   trackingRef  String?  @unique @map("tracking_ref") @db.VarChar(16)
-//   corridor     Corridor? @relation(...)
-//   fxQuote      FxQuote?  @relation(...)
-//   crossBorder  TransferCrossBorderDetail?
-// Phase 2 model Beneficiary gains:
-//   bankAccountCountryCode String? @map("bank_account_country_code") @db.Char(2)
-
-// ---------------------------------------------------------------------------
-// Settlement & reconciliation
+// Settlement
 // ---------------------------------------------------------------------------
 
 model SettlementBatch {
@@ -866,23 +1038,23 @@ model SettlementBatch {
   nostroAccountId  String                @map("nostro_account_id") @db.Uuid
   valueDate        DateTime              @map("value_date") @db.Date
   status           SettlementBatchStatus @default(OPEN)
-  payoutCount      Int                   @default(0) @map("payout_count")
-  payoutTotalMinor BigInt                @default(0) @map("payout_total_minor")
-  refundCount      Int                   @default(0) @map("refund_count")
-  refundTotalMinor BigInt                @default(0) @map("refund_total_minor")
-  partnerFeeTotalMinor BigInt            @default(0) @map("partner_fee_total_minor")
-  prefundingTotalMinor BigInt            @default(0) @map("prefunding_total_minor")
-  openingPositionMinor BigInt?           @map("opening_position_minor")
-  closingPositionMinor BigInt?           @map("closing_position_minor")
-  currency         String                @db.Char(3)
+  transferCount    Int                   @default(0) @map("transfer_count")
+  recvTotalMinor   BigInt                @default(0) @map("recv_total_minor")
+  recvCurrency     String                @map("recv_currency") @db.Char(3)
+  sendTotalMinor   BigInt                @default(0) @map("send_total_minor")
+  sendCurrency     String                @map("send_currency") @db.Char(3)
+  partnerFeeMinor  BigInt                @default(0) @map("partner_fee_minor")
   closedAt         DateTime?             @map("closed_at") @db.Timestamptz(6)
+  generatedAt      DateTime?             @map("generated_at") @db.Timestamptz(6)
   deliveredAt      DateTime?             @map("delivered_at") @db.Timestamptz(6)
   acknowledgedAt   DateTime?             @map("acknowledged_at") @db.Timestamptz(6)
+  lastError        String?               @map("last_error") @db.VarChar(300)
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  nostro NostroAccount    @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
-  files  SettlementFile[]
+  nostro  NostroAccount               @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
+  files   SettlementFile[]
+  details TransferCrossBorderDetail[]
 
   @@unique([nostroAccountId, valueDate])
   @@index([status, valueDate])
@@ -890,114 +1062,64 @@ model SettlementBatch {
 }
 
 model SettlementFile {
-  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  batchId        String?                 @map("batch_id") @db.Uuid
-  nostroAccountId String                 @map("nostro_account_id") @db.Uuid
-  direction      SettlementFileDirection
-  /// "PAYOUT_INSTRUCTIONS" | "SETTLEMENT_STATEMENT" | "PAIN_001" | "PARTNER_STATEMENT".
-  fileType       String                  @map("file_type") @db.VarChar(32)
-  fileName       String                  @map("file_name") @db.VarChar(200)
-  /// Object key in the S3-compatible bucket (Object Lock, 10 years).
-  storageKey     String                  @map("storage_key") @db.VarChar(512)
-  sha256         String                  @db.VarChar(64)
-  lineCount      Int                     @map("line_count")
-  controlTotalMinor BigInt               @map("control_total_minor")
-  currency       String                  @db.Char(3)
-  /// Remote path on partner SFTP after delivery / before ingestion.
-  remotePath     String?                 @map("remote_path") @db.VarChar(512)
-  deliveredAt    DateTime?               @map("delivered_at") @db.Timestamptz(6)
-  ingestedAt     DateTime?               @map("ingested_at") @db.Timestamptz(6)
-  parserKey      String?                 @map("parser_key") @db.VarChar(48)
-  parseErrors    Json?                   @map("parse_errors")
-  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId         String?                 @map("batch_id") @db.Uuid
+  nostroAccountId String                  @map("nostro_account_id") @db.Uuid
+  kind            SettlementFileKind
+  direction       SettlementFileDirection
+  format          SettlementFileFormat
+  version         Int                     @default(1)
+  fileName        String                  @map("file_name") @db.VarChar(255)
+  storageKey      String                  @map("storage_key") @db.VarChar(512)
+  sha256          String                  @db.VarChar(64)
+  sizeBytes       Int                     @map("size_bytes")
+  lineCount       Int                     @default(0) @map("line_count")
+  /// For INBOUND: statement period covered.
+  periodStart     DateTime?               @map("period_start") @db.Date
+  periodEnd       DateTime?               @map("period_end") @db.Date
+  deliveredAt     DateTime?               @map("delivered_at") @db.Timestamptz(6)
+  ingestedAt      DateTime?               @map("ingested_at") @db.Timestamptz(6)
+  quarantined     Boolean                 @default(false)
+  parseError      String?                 @map("parse_error") @db.VarChar(500)
+  uploadedById    String?                 @map("uploaded_by_id") @db.Uuid
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   batch SettlementBatch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
   lines SettlementFileLine[]
 
-  @@unique([sha256])
-  @@index([nostroAccountId, direction, createdAt])
+  @@unique([nostroAccountId, fileName, version])
+  @@index([kind, direction, createdAt])
   @@map("settlement_files")
 }
 
-/// Parsed partner statement lines (inbound) or generated lines (outbound) used by reconciliation.
 model SettlementFileLine {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  fileId          String   @map("file_id") @db.Uuid
-  lineNo          Int      @map("line_no")
-  externalReference String? @map("external_reference") @db.VarChar(64)
-  providerTransactionId String? @map("provider_transaction_id") @db.VarChar(128)
-  trackingRef     String?  @map("tracking_ref") @db.VarChar(16)
-  amountMinor     BigInt   @map("amount_minor")
-  currency        String   @db.Char(3)
-  feeMinor        BigInt?  @map("fee_minor")
-  valueDate       DateTime @map("value_date") @db.Date
-  /// Partner's status word, normalised: "PAID" | "FAILED" | "REVERSED" | "PENDING".
-  statusNormalized String  @map("status_normalized") @db.VarChar(16)
-  rawLine         String?  @map("raw_line") @db.VarChar(2000)
-  matchedTransferId String? @map("matched_transfer_id") @db.Uuid
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fileId           String                    @map("file_id") @db.Uuid
+  lineNo           Int                       @map("line_no")
+  amountMinor      BigInt                    @map("amount_minor")
+  currency         String                    @db.Char(3)
+  valueDate        DateTime                  @map("value_date") @db.Date
+  /// Our reference as seen by the partner (tracking ref or leg external reference).
+  ourReference     String?                   @map("our_reference") @db.VarChar(64)
+  partnerReference String?                   @map("partner_reference") @db.VarChar(128)
+  /// CREDIT or DEBIT from the nostro's point of view.
+  direction        String                    @db.VarChar(6)
+  feeMinor         BigInt?                   @map("fee_minor")
+  rateNum          BigInt?                   @map("rate_num")
+  matchStatus      SettlementLineMatchStatus @default(UNMATCHED) @map("match_status")
+  transferId       String?                   @map("transfer_id") @db.Uuid
+  walletTransactionId String?                @map("wallet_transaction_id") @db.Uuid
+  ledgerEntryId    String?                   @map("ledger_entry_id") @db.Uuid
+  raw              Json?
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   file SettlementFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   @@unique([fileId, lineNo])
-  @@index([externalReference])
-  @@index([providerTransactionId])
+  @@index([partnerReference])
+  @@index([ourReference])
+  @@index([matchStatus, valueDate])
   @@map("settlement_file_lines")
-}
-
-model ReconciliationRun {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nostroAccountId String   @map("nostro_account_id") @db.Uuid
-  valueDate       DateTime @map("value_date") @db.Date
-  /// "SCHEDULED" | "MANUAL".
-  trigger         String   @db.VarChar(16)
-  ledgerItemCount Int      @default(0) @map("ledger_item_count")
-  legItemCount    Int      @default(0) @map("leg_item_count")
-  partnerItemCount Int     @default(0) @map("partner_item_count")
-  matchedCount    Int      @default(0) @map("matched_count")
-  breakCount      Int      @default(0) @map("break_count")
-  ledgerBalanceMinor BigInt? @map("ledger_balance_minor")
-  partnerBalanceMinor BigInt? @map("partner_balance_minor")
-  startedAt       DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
-  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
-  error           String?  @db.VarChar(500)
-
-  nostro NostroAccount        @relation(fields: [nostroAccountId], references: [id], onDelete: Restrict)
-  breaks ReconciliationBreak[]
-
-  @@index([nostroAccountId, valueDate])
-  @@map("reconciliation_runs")
-}
-
-model ReconciliationBreak {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  runId           String           @map("run_id") @db.Uuid
-  type            ReconBreakType
-  status          ReconBreakStatus @default(OPEN)
-  transferId      String?          @map("transfer_id") @db.Uuid
-  walletTransactionId String?      @map("wallet_transaction_id") @db.Uuid
-  settlementLineId String?         @map("settlement_line_id") @db.Uuid
-  ledgerAmountMinor BigInt?        @map("ledger_amount_minor")
-  legAmountMinor  BigInt?          @map("leg_amount_minor")
-  partnerAmountMinor BigInt?       @map("partner_amount_minor")
-  currency        String           @db.Char(3)
-  /// "MATCH_MANUALLY" | "WRITE_OFF" | "ADJUST_LEDGER" | "REQUEST_PARTNER_CORRECTION" | "MARK_DUPLICATE".
-  resolutionAction String?         @map("resolution_action") @db.VarChar(32)
-  resolutionNote  String?          @map("resolution_note")
-  evidenceDocumentId String?       @map("evidence_document_id") @db.Uuid
-  adjustmentJournalId String?      @map("adjustment_journal_id") @db.Uuid
-  assignedToId    String?          @map("assigned_to_id") @db.Uuid
-  resolvedById    String?          @map("resolved_by_id") @db.Uuid
-  approvedById    String?          @map("approved_by_id") @db.Uuid
-  resolvedAt      DateTime?        @map("resolved_at") @db.Timestamptz(6)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  run ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  @@index([status, createdAt])
-  @@index([transferId])
-  @@map("reconciliation_breaks")
 }
 
 // ---------------------------------------------------------------------------
@@ -1005,102 +1127,161 @@ model ReconciliationBreak {
 // ---------------------------------------------------------------------------
 
 model RegulatoryReport {
-  id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  /// "BEAC_FX_DECLARATION" | "BNA_INBOUND_REMITTANCES" | "BM_INBOUND_REMITTANCES" | "BCEAO_PARTNER_STATEMENT" | "BCV_PARTNER_STATEMENT" | "BCSTP_PARTNER_STATEMENT".
-  reportType    String                 @map("report_type") @db.VarChar(40)
-  regulatorCode String                 @map("regulator_code") @db.VarChar(16)
-  periodStart   DateTime               @map("period_start") @db.Date
-  periodEnd     DateTime               @map("period_end") @db.Date
-  status        RegulatoryReportStatus @default(GENERATED)
-  layoutVersion String                 @map("layout_version") @db.VarChar(16)
-  storageKey    String                 @map("storage_key") @db.VarChar(512)
-  sha256        String                 @db.VarChar(64)
-  rowCount      Int                    @map("row_count")
-  totalMinor    BigInt                 @map("total_minor")
-  currency      String                 @db.Char(3)
-  generatedById String?                @map("generated_by_id") @db.Uuid
-  reviewedById  String?                @map("reviewed_by_id") @db.Uuid
-  submittedAt   DateTime?              @map("submitted_at") @db.Timestamptz(6)
-  submissionRef String?                @map("submission_ref") @db.VarChar(100)
-  supersededById String?               @unique @map("superseded_by_id") @db.Uuid
-  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type            RegulatoryReportType
+  regulatorCode   String                 @map("regulator_code") @db.VarChar(16)
+  status          RegulatoryReportStatus @default(DRAFT)
+  periodStart     DateTime               @map("period_start") @db.Date
+  periodEnd       DateTime               @map("period_end") @db.Date
+  layoutVersion   String                 @map("layout_version") @db.VarChar(16)
+  rowCount        Int                    @default(0) @map("row_count")
+  totalMinor      BigInt                 @default(0) @map("total_minor")
+  currency        String                 @db.Char(3)
+  storageKey      String?                @map("storage_key") @db.VarChar(512)
+  sha256          String?                @db.VarChar(64)
+  /// Partner / intermediary through which the report is filed.
+  filedViaProviderId String?             @map("filed_via_provider_id") @db.Uuid
+  generatedAt     DateTime?              @map("generated_at") @db.Timestamptz(6)
+  reviewedById    String?                @map("reviewed_by_id") @db.Uuid
+  reviewedAt      DateTime?              @map("reviewed_at") @db.Timestamptz(6)
+  submittedById   String?                @map("submitted_by_id") @db.Uuid
+  submittedAt     DateTime?              @map("submitted_at") @db.Timestamptz(6)
+  submissionRef   String?                @map("submission_ref") @db.VarChar(128)
+  rejectionReason String?                @map("rejection_reason") @db.VarChar(500)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([reportType, periodStart, periodEnd, layoutVersion])
-  @@index([regulatorCode, periodStart])
+  items RegulatoryReportItem[]
+
+  @@unique([type, periodStart, periodEnd, layoutVersion])
+  @@index([status, periodEnd])
   @@map("regulatory_reports")
 }
+
+/// Which transfers went into which report line.
+model RegulatoryReportItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId    String   @map("report_id") @db.Uuid
+  transferId  String   @map("transfer_id") @db.Uuid
+  corridorId  String   @map("corridor_id") @db.Uuid
+  lineNo      Int      @map("line_no")
+  amountMinor BigInt   @map("amount_minor")
+  currency    String   @db.Char(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  report   RegulatoryReport          @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  detail   TransferCrossBorderDetail @relation(fields: [transferId], references: [transferId], onDelete: Restrict)
+  corridor Corridor                  @relation(fields: [corridorId], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, transferId])
+  @@index([transferId])
+  @@map("regulatory_report_items")
+}
+
+// --- Extensions to existing models (fragments) -------------------------------------------
+
+// model Transfer (Phase 5) gains:
+//   corridorId    String?  @map("corridor_id") @db.Uuid        // backfilled, NOT NULL in Phase 9 contract
+//   intlQuoteId   String?  @unique @map("intl_quote_id") @db.Uuid
+//   trackingRef   String?  @unique @map("tracking_ref") @db.VarChar(16)
+//   crossBorder   TransferCrossBorderDetail?
+// model Beneficiary (Phase 2) gains:
+//   bankBic       String?  @map("bank_bic") @db.VarChar(11)
+// model LedgerJournal (Phase 5) gains:
+//   fxPairJournalId String? @map("fx_pair_journal_id") @db.Uuid   // self relation, both directions set
+// model ReconciliationRun (Phase 5) gains:
+//   nostroAccountId String? @map("nostro_account_id") @db.Uuid
+// model ReconciliationBreak (Phase 5) gains:
+//   nostroAccountId      String? @map("nostro_account_id") @db.Uuid
+//   settlementFileLineId String? @map("settlement_file_line_id") @db.Uuid
 ```
 
 ### 5.3 Migration plan (expand → migrate → contract)
 
-| Step                   | When                                                                       | Migration                               | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------- | -------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Expand 1**           | W1 (M6.1), 2027-05-31                                                      | `20270531090000_phase6_expand`          | 12 enums, `ALTER TYPE connector_kind ADD VALUE 'AGGREGATOR'`, `ALTER TYPE transfer_kind ADD VALUE 'CROSS_BORDER'`, 16 tables + 2 join tables, nullable columns on `transfers` and `beneficiaries`, indexes, partitions for `fx_rates` and `transfer_tracking_events` (current month + 3), seed of `transfer_purpose_codes` and pegged `fx_rate_sources`, new permissions (`corridors:*`, `fx:*`, `nostro:*`, `settlement:*`, `reconciliation:*`, `regulatory-reports:*`, `intl-transfers:*`), feature flag rows (all off), new system role `TREASURY_OPS` bindings |
-| **Expand 2**           | W3 (M6.3), 2027-06-14                                                      | `20270614090000_phase6_ledger_accounts` | Data migration creating Phase 5 ledger accounts `intl_clearing_<ccy>`, `fx_position_<a>_<b>` pairs, `nostro_<ccy>_<partner>`, `recon_adjustments_<ccy>`, `intl_fee_revenue_<ccy>` for the six currencies; `nostro_balance_snapshots` SQL view                                                                                                                                                                                                                                                                                                                      |
-| **Migrate (backfill)** | W2–W3, batched job                                                         | `pnpm intl backfill:corridors`          | Insert domestic corridor rows for Phase 5 live countries (`isDomestic=true`, `LIVE`, limits copied from Phase 5 country settings); `UPDATE transfers SET corridor_id = …` in batches of 5,000 by `created_at`, idempotent (`WHERE corridor_id IS NULL`), rate-limited to keep p95 API latency unchanged; verification query must return 0 unmapped rows before M6.3 exit                                                                                                                                                                                           |
-| **Soak**               | W3 → Phase 9 W1                                                            | —                                       | Phase 5 code writes `corridor_id` for new domestic transfers from M6.2 (dual-write); daily `data-jobs.yml` check asserts zero `NULL` `corridor_id` on transfers created after 2027-06-11                                                                                                                                                                                                                                                                                                                                                                           |
-| **Contract**           | **Phase 9 W1 (2027-08-23)**, core team migration slot, after Neon snapshot | `20270823090000_phase6_contract`        | `ALTER TABLE transfers ALTER COLUMN corridor_id SET NOT NULL`; drop the temporary `transfers_corridor_null_idx` partial index. No column drops: Phase 6 removes nothing from earlier phases                                                                                                                                                                                                                                                                                                                                                                        |
+| Step                        | When                           | Artefact                                             | Content                                                                                                                                                                                                                                                                                                                                                                                                                                          | Safety                                                                                                                                                                                                                                                        |
+| --------------------------- | ------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Expand**                  | W1 (2027-06-01 staging, 2027-06-03 production) | `20270531090000_phase6_expand`                | 14 enums, 17 tables, enum value additions (each `ALTER TYPE … ADD VALUE` in its own transaction — Postgres forbids using a new value in the same transaction), nullable columns on `transfers`, `beneficiaries`, `ledger_journals`, `reconciliation_runs`, `reconciliation_breaks`; partition parents for `fx_rates` and `transfer_tracking_events` with 3 months of partitions; trigger `tracking_event_required()`; indexes `CREATE INDEX CONCURRENTLY` run by a post-migration script | Additive only; `db-migrate.yml` runs it with `prisma migrate deploy` against the Neon `main` branch after a branch-based `up → down → up` rehearsal on a production snapshot; Phase 5 regression suite runs against the expanded schema before production apply |
+| **Migrate** (backfill/seed) | W1–W2                          | `packages/db/prisma/seed-data/phase6/*.json`, `scripts/backfill-corridors.ts` | Seed `regulatory_codes` (`en/fr/pt` labels), `fx_rate_sources` (`pegged-eur`, `market-vendor` disabled, `manual`), eleven cross-border `corridors` in `DRAFT` plus domestic corridors for Phase 5 live countries, `nostro_accounts` for pilot partners with ledger accounts `ASSET:NOSTRO:*` and `FX_POSITION:*` created through `LedgerService`; backfill `transfers.corridor_id` from `country_code` in batches of 5 000 with cursor in `Setting intl.backfill.corridors.cursor`, resumable | Backfill is idempotent (`WHERE corridor_id IS NULL`), runs in the worker group off-peak, verified by `SELECT count(*) FROM transfers WHERE corridor_id IS NULL` = 0 and a per-country sample check                                                               |
+| **Contract**                | Phase 9 W1 slot (2027-08-23)   | `20270823100000_phase6_contract` (owned by Phase 9)  | `ALTER TABLE transfers ALTER COLUMN corridor_id SET NOT NULL` guarded by a precheck; FK `transfers.corridor_id → corridors.id` validated (`NOT VALID` added in expand, `VALIDATE CONSTRAINT` here)                                                                                                                                                                                                                                                  | Only after 30 days of zero NULLs; rollback is `DROP NOT NULL` (instant)                                                                                                                                                                                       |
 
 ### 5.4 Example SQL
 
 ```sql
 -- 20270531090000_phase6_expand (excerpt)
-ALTER TYPE connector_kind ADD VALUE IF NOT EXISTS 'AGGREGATOR';
-ALTER TYPE transfer_kind ADD VALUE IF NOT EXISTS 'CROSS_BORDER';
 
+-- 1. Enum value additions (one per transaction; Prisma generates separate statements)
+ALTER TYPE transfer_type        ADD VALUE IF NOT EXISTS 'CROSS_BORDER';
+ALTER TYPE transfer_status      ADD VALUE IF NOT EXISTS 'HELD';
+ALTER TYPE ledger_journal_kind  ADD VALUE IF NOT EXISTS 'FX_CONVERT';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'MISSING_AT_PARTNER';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'MISSING_IN_LEDGER';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'AMOUNT_MISMATCH';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'FX_MISMATCH';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'STATUS_MISMATCH';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'DUPLICATE';
+ALTER TYPE recon_break_kind     ADD VALUE IF NOT EXISTS 'FEE_MISMATCH';
+ALTER TYPE connector_kind       ADD VALUE IF NOT EXISTS 'AGGREGATOR';
+ALTER TYPE auth_scheme          ADD VALUE IF NOT EXISTS 'SSH_KEY';
+
+-- 2. New enums and tables (one shown; the rest follow the Prisma block)
 CREATE TYPE corridor_status AS ENUM ('DRAFT','SANDBOX','FRIENDS_FAMILY','LIVE','PAUSED','RETIRED');
-CREATE TYPE cross_border_state AS ENUM ('QUOTED','FUNDING','FUNDED','HELD','FX_BOOKED','PAYOUT_PENDING','PAID_OUT','REFUNDING','REFUNDED','FAILED','EXPIRED');
 
 CREATE TABLE corridors (
-  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  key                 varchar(8) NOT NULL UNIQUE,
-  send_country_code   char(2) NOT NULL,
-  recv_country_code   char(2) NOT NULL,
-  send_currency       char(3) NOT NULL,
-  recv_currency       char(3) NOT NULL,
-  is_domestic         boolean NOT NULL DEFAULT false,
-  status              corridor_status NOT NULL DEFAULT 'DRAFT',
-  regulator_code      varchar(16) NOT NULL,
-  licence_basis       licence_basis NOT NULL,
-  single_txn_max_minor bigint NOT NULL CHECK (single_txn_max_minor > 0),
-  single_txn_min_minor bigint NOT NULL DEFAULT 0 CHECK (single_txn_min_minor >= 0),
-  daily_limit_minor   bigint NOT NULL,
-  monthly_limit_minor bigint NOT NULL,
-  fee_schedule_id     uuid NOT NULL REFERENCES fee_schedules(id),
-  fx_markup_bps       integer NOT NULL DEFAULT 0 CHECK (fx_markup_bps BETWEEN 0 AND 1000),
-  quote_lock_seconds  integer NOT NULL DEFAULT 120 CHECK (quote_lock_seconds BETWEEN 30 AND 3600),
-  fx_max_rate_age_seconds integer NOT NULL DEFAULT 300,
-  fx_max_drift_bps    integer NOT NULL DEFAULT 150,
-  payout_sla_minutes  integer NOT NULL DEFAULT 30,
-  settlement_cutoff   varchar(5) NOT NULL DEFAULT '16:00',
-  settlement_timezone varchar(64) NOT NULL DEFAULT 'Africa/Douala',
-  compliance_rules    jsonb NOT NULL DEFAULT '{}'::jsonb,
-  allowed_purpose_codes varchar(32)[] NOT NULL DEFAULT '{}',
-  requires_manual_review_above_minor bigint,
-  created_by_id       uuid REFERENCES users(id) ON DELETE SET NULL,
-  approved_by_id      uuid REFERENCES users(id) ON DELETE SET NULL,
-  approved_at         timestamptz(6),
-  created_at          timestamptz(6) NOT NULL DEFAULT now(),
-  updated_at          timestamptz(6) NOT NULL DEFAULT now(),
-  retired_at          timestamptz(6),
-  UNIQUE (send_country_code, recv_country_code),
-  CHECK (key = lower(send_country_code) || '-' || lower(recv_country_code))
+  id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  key                       varchar(8)  NOT NULL UNIQUE,
+  send_country_code         char(2)     NOT NULL,
+  recv_country_code         char(2)     NOT NULL,
+  send_currency             char(3)     NOT NULL,
+  recv_currency             char(3)     NOT NULL,
+  status                    corridor_status NOT NULL DEFAULT 'DRAFT',
+  is_domestic               boolean     NOT NULL DEFAULT false,
+  min_per_transfer_minor    bigint      NOT NULL,
+  max_per_transfer_minor    bigint      NOT NULL,
+  daily_limit_minor         bigint,
+  monthly_limit_minor       bigint,
+  min_kyc_level             varchar(16) NOT NULL DEFAULT 'LEVEL_1',
+  mfa_threshold_minor       bigint,
+  fee_schedule_id           uuid REFERENCES fee_schedules(id) ON DELETE RESTRICT,
+  fx_markup_bps             integer     NOT NULL DEFAULT 0 CHECK (fx_markup_bps BETWEEN 0 AND 2000),
+  quote_lock_seconds        integer     NOT NULL DEFAULT 180 CHECK (quote_lock_seconds BETWEEN 30 AND 3600),
+  quote_grace_seconds       integer     NOT NULL DEFAULT 30,
+  quote_grace_max_drift_bps integer     NOT NULL DEFAULT 25,
+  cutoff_local_time         varchar(5)  NOT NULL DEFAULT '16:00',
+  timezone                  varchar(64) NOT NULL DEFAULT 'Africa/Douala',
+  value_date_offset_days    integer     NOT NULL DEFAULT 1,
+  sla_minutes               integer     NOT NULL DEFAULT 30,
+  required_fields           text[]      NOT NULL DEFAULT '{}',
+  compliance_rules          jsonb       NOT NULL DEFAULT '[]',
+  regulator_code            varchar(16) NOT NULL,
+  licence_basis             licence_basis NOT NULL,
+  partner_provider_id       uuid REFERENCES providers(id) ON DELETE RESTRICT,
+  licence_evidence_key      varchar(255),
+  disclosures               jsonb       NOT NULL DEFAULT '{}',
+  created_by_id             uuid REFERENCES users(id) ON DELETE SET NULL,
+  approved_by_id            uuid REFERENCES users(id) ON DELETE SET NULL,
+  approved_at               timestamptz,
+  created_at                timestamptz NOT NULL DEFAULT now(),
+  updated_at                timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT corridors_pair_unique UNIQUE (send_country_code, recv_country_code, send_currency, recv_currency),
+  CONSTRAINT corridors_limits_chk CHECK (min_per_transfer_minor >= 0 AND max_per_transfer_minor >= min_per_transfer_minor)
 );
+CREATE INDEX corridors_status_idx ON corridors (status);
+CREATE INDEX corridors_send_status_idx ON corridors (send_country_code, status);
 
--- Rates as scaled integers; partitioned monthly like Phase 4 event tables.
+-- 3. Partitioned tick table
 CREATE TABLE fx_rates (
-  id              uuid NOT NULL DEFAULT gen_random_uuid(),
-  source_id       uuid NOT NULL REFERENCES fx_rate_sources(id),
-  base_currency   char(3) NOT NULL,
-  quote_currency  char(3) NOT NULL,
-  mid_scaled      bigint NOT NULL CHECK (mid_scaled > 0),
-  bid_scaled      bigint,
-  ask_scaled      bigint,
-  rate_scale      integer NOT NULL DEFAULT 8,
-  captured_at     timestamptz(6) NOT NULL,
-  source_timestamp timestamptz(6),
-  created_at      timestamptz(6) NOT NULL DEFAULT now(),
+  id             uuid        NOT NULL DEFAULT gen_random_uuid(),
+  source_id      uuid        NOT NULL REFERENCES fx_rate_sources(id) ON DELETE RESTRICT,
+  base_currency  char(3)     NOT NULL,
+  quote_currency char(3)     NOT NULL,
+  rate_num       bigint      NOT NULL CHECK (rate_num > 0),
+  bid_num        bigint,
+  ask_num        bigint,
+  captured_at    timestamptz NOT NULL,
+  valid_until    timestamptz,
+  entered_by_id  uuid,
+  approved_by_id uuid,
+  created_at     timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (id, captured_at)
 ) PARTITION BY RANGE (captured_at);
 CREATE TABLE fx_rates_2027_06 PARTITION OF fx_rates FOR VALUES FROM ('2027-06-01') TO ('2027-07-01');
@@ -1108,197 +1289,208 @@ CREATE TABLE fx_rates_2027_07 PARTITION OF fx_rates FOR VALUES FROM ('2027-07-01
 CREATE TABLE fx_rates_2027_08 PARTITION OF fx_rates FOR VALUES FROM ('2027-08-01') TO ('2027-09-01');
 CREATE INDEX fx_rates_pair_captured_idx ON fx_rates (base_currency, quote_currency, captured_at DESC);
 
--- Quote lock + reservation invariants
-CREATE TABLE fx_quotes (
-  -- columns as in the Prisma model …
-  CHECK (recv_amount >= 0 AND send_amount > 0 AND fee_amount >= 0),
-  CHECK (reserved_minor >= 0),
-  CHECK (locked_until > created_at)
-);
-CREATE INDEX fx_quotes_active_lock_idx ON fx_quotes (locked_until) WHERE status = 'ACTIVE';
-
--- Phase 5 transfers: expand-only nullable columns
+-- 4. Nullable columns on earlier tables
 ALTER TABLE transfers
-  ADD COLUMN corridor_id  uuid REFERENCES corridors(id) ON DELETE RESTRICT,
-  ADD COLUMN fx_quote_id  uuid UNIQUE REFERENCES fx_quotes(id) ON DELETE RESTRICT,
-  ADD COLUMN tracking_ref varchar(16) UNIQUE;
-CREATE INDEX transfers_corridor_null_idx ON transfers (created_at) WHERE corridor_id IS NULL;
-CREATE INDEX transfers_corridor_created_idx ON transfers (corridor_id, created_at);
+  ADD COLUMN corridor_id   uuid,
+  ADD COLUMN intl_quote_id uuid,
+  ADD COLUMN tracking_ref  varchar(16);
+ALTER TABLE transfers
+  ADD CONSTRAINT transfers_corridor_fk FOREIGN KEY (corridor_id) REFERENCES corridors(id) NOT VALID;
+CREATE UNIQUE INDEX CONCURRENTLY transfers_intl_quote_uq ON transfers (intl_quote_id) WHERE intl_quote_id IS NOT NULL;
+CREATE UNIQUE INDEX CONCURRENTLY transfers_tracking_ref_uq ON transfers (tracking_ref) WHERE tracking_ref IS NOT NULL;
+ALTER TABLE beneficiaries ADD COLUMN bank_bic varchar(11);
+ALTER TABLE ledger_journals ADD COLUMN fx_pair_journal_id uuid REFERENCES ledger_journals(id);
+ALTER TABLE reconciliation_runs ADD COLUMN nostro_account_id uuid;
+ALTER TABLE reconciliation_breaks
+  ADD COLUMN nostro_account_id uuid,
+  ADD COLUMN settlement_file_line_id uuid;
 
--- Available liquidity (read model used by NostroService; Redis-cached 10 s)
-CREATE VIEW nostro_available_liquidity AS
+-- 5. Integrity trigger: every cross-border state change writes a tracking event
+CREATE OR REPLACE FUNCTION tracking_event_required() RETURNS trigger AS $$
+BEGIN
+  IF NEW.state IS DISTINCT FROM OLD.state THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM transfer_tracking_events e
+      WHERE e.transfer_id = NEW.transfer_id AND e.to_state = NEW.state
+        AND e.created_at >= now() - interval '5 seconds'
+    ) THEN
+      RAISE EXCEPTION 'cross-border state change without tracking event (transfer %)', NEW.transfer_id
+        USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE CONSTRAINT TRIGGER transfer_cross_border_details_tracking_chk
+  AFTER UPDATE OF state ON transfer_cross_border_details
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION tracking_event_required();
+
+-- 6. Backfill (scripts/backfill-corridors.ts issues this in batches)
+UPDATE transfers t
+   SET corridor_id = c.id
+  FROM corridors c
+ WHERE t.corridor_id IS NULL
+   AND c.is_domestic = true
+   AND c.send_country_code = t.country_code
+   AND c.send_currency = t.currency
+   AND t.id IN (SELECT id FROM transfers WHERE corridor_id IS NULL ORDER BY created_at LIMIT 5000);
+
+-- 7. Liquidity view used by the treasury tile and the guard (read path)
+CREATE VIEW nostro_liquidity AS
 SELECT n.id AS nostro_account_id,
        n.currency,
-       COALESCE(l.balance_minor, 0)                               AS ledger_balance_minor,
-       COALESCE(q.reserved_minor, 0)                              AS reserved_minor,
-       COALESCE(l.balance_minor, 0) - COALESCE(q.reserved_minor, 0) - n.min_reserve_minor AS available_minor
-FROM nostro_accounts n
-LEFT JOIN LATERAL (
-  SELECT SUM(e.debit) - SUM(e.credit) AS balance_minor
-  FROM ledger_entries e WHERE e.account_id = n.ledger_account_id
-) l ON true
-LEFT JOIN LATERAL (
-  SELECT SUM(fq.reserved_minor) AS reserved_minor
-  FROM fx_quotes fq
-  WHERE fq.nostro_account_id = n.id
-    AND fq.status IN ('ACTIVE','CONSUMED')
-    AND fq.reserved_minor > 0
-) q ON true;
-
--- Backfill (run by `pnpm intl backfill:corridors`, batched)
-WITH batch AS (
-  SELECT t.id, c.id AS corridor_id
-  FROM transfers t
-  JOIN corridors c ON c.is_domestic
-                  AND c.send_country_code = t.send_country_code
-                  AND c.recv_country_code = t.send_country_code
-  WHERE t.corridor_id IS NULL
-  ORDER BY t.created_at
-  LIMIT 5000
-)
-UPDATE transfers t SET corridor_id = b.corridor_id
-FROM batch b WHERE t.id = b.id;
-
--- 20270823090000_phase6_contract (Phase 9 W1, after Neon snapshot)
-ALTER TABLE transfers ALTER COLUMN corridor_id SET NOT NULL;
-DROP INDEX IF EXISTS transfers_corridor_null_idx;
-
--- Nightly expiry sweep (intl:saga scheduler), releases reservations
-UPDATE fx_quotes SET status = 'EXPIRED', reserved_minor = 0
-WHERE status = 'ACTIVE' AND locked_until < now() - interval '5 minutes';
+       la.balance_cache                                   AS ledger_balance_minor,
+       COALESCE(SUM(r.amount_minor) FILTER (WHERE r.released_at IS NULL AND r.expires_at > now()), 0) AS reserved_minor,
+       la.balance_cache
+         - COALESCE(SUM(r.amount_minor) FILTER (WHERE r.released_at IS NULL AND r.expires_at > now()), 0)
+         - n.min_reserve_minor                            AS available_minor
+  FROM nostro_accounts n
+  JOIN ledger_accounts la ON la.id = n.ledger_account_id
+  LEFT JOIN nostro_reservations r ON r.nostro_account_id = n.id
+ GROUP BY n.id, n.currency, la.balance_cache, n.min_reserve_minor;
 ```
 
 ### 5.5 Backfill & rollback strategy
 
-- **Backfill** runs as a BullMQ job in the `worker` group with a 200 ms pause between 5,000-row batches; progress persisted in `settings` (`intl.backfill.corridors.cursor`) so it resumes after a crash; completion verified by `SELECT count(*) FROM transfers WHERE corridor_id IS NULL AND created_at < <cutover>` = 0 and recorded as §12 evidence.
-- **Rollback of code** (any week): redeploy previous API/worker image — the expanded schema is inert for Phase 5 (nullable columns, unused tables); in-flight cross-border transfers must be drained first: `intl.enabled=false`, wait for `PAYOUT_PENDING` count = 0 (alert if > 15 min), then roll back. Rolling back with transfers at `FX_BOOKED` is forbidden by the runbook because the previous image cannot unwind FX; the deploy workflow checks this gate.
-- **Rollback of expand migration**: `prisma migrate` down script drops the 18 tables, the view, the partitions, the three `transfers` columns and the `beneficiaries` column; enum values cannot be removed in Postgres and are left in place (harmless). Executed only if no cross-border transfer exists in production (`SELECT 1 FROM transfer_cross_border_details LIMIT 1` must be empty) — after that point, roll forward only.
-- **Rollback of contract** (Phase 9): `ALTER COLUMN corridor_id DROP NOT NULL` + Neon snapshot available for 7 days.
-- **Reservation safety**: a crash between quote creation and transfer creation leaves an `ACTIVE` quote with reservation; the expiry sweep releases it within `lockSeconds + 5 min`; the liquidity view already excludes `EXPIRED` quotes.
+- **Backfill**: domestic corridor rows are created by the seed; `scripts/backfill-corridors.ts` fills `transfers.corridor_id` in 5 000-row batches with a 200 ms pause, resumable from `Setting intl.backfill.corridors.cursor`, logged to `audit_logs` (`actorType=SYSTEM`). Verification: zero NULLs, `count(*) GROUP BY corridor_id` matches `count(*) GROUP BY country_code, currency`. Nostro ledger accounts and `FX_POSITION:<ccy>` accounts are created through `LedgerService.createAccount()` so the Phase 5 chart-of-accounts invariants hold.
+- **Rollback before any real cross-border transfer (W1–W5)**: `down.sql` drops Phase 6 tables, the trigger, the view, the partitions and the nullable columns; enum values cannot be removed in Postgres and are left in place (harmless). Rehearsed on a Neon branch in `db-migrate.yml` dry-run.
+- **Rollback after real transfers (W6+)**: **by flags and corridor status only**. Data is never deleted: ledger rows are immutable, `transfer_cross_border_details` rows stay, in-flight transfers are drained (`HELD` → operator release/refund) before an image rollback (`drain gate` in `deploy-api.yml`: zero transfers in `FX_LOCKED`/`PAYOUT_PENDING` for the affected corridors or explicit override).
+- **Bad rate incident**: identify affected quotes by `fx_rate_id`/`rate_derivation`, list transfers via `intl_quotes.id → transfer_cross_border_details.quote_id`, remediate with `CORRECTION` journals under four-eyes; `intl.fx.freeze` while investigating.
 
 ### 5.6 Data classification & retention
 
-| Data                                                     | Classification               | Retention                                                                                                                                  | Mechanism                            |
-| -------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
-| `fx_rates`                                               | Internal                     | Raw ticks 13 months (partition detach + archive to bucket as Parquet), daily OHLC aggregate kept 10 years (Phase 10)                       | `data-jobs.yml` partitions           |
-| `fx_quotes`                                              | Internal (contains user id)  | Shadow and `EXPIRED` quotes 90 days; `CONSUMED` quotes for the life of the transfer record (10 years)                                      | Nightly purge job                    |
-| `transfer_cross_border_details` incl. identity snapshots | Restricted (PII, regulatory) | 10 years after transfer completion (CEMAC AML record-keeping; BNA/BM equivalents), then anonymised snapshot (keep codes, amounts, country) | Phase 10 archival; no deletes before |
-| `transfer_tracking_events`                               | Internal                     | 24 months, then aggregated                                                                                                                 | Partitions                           |
-| Settlement and regulatory files (bucket, Object Lock)    | Restricted                   | 10 years, immutable                                                                                                                        | S3 Object Lock compliance mode       |
-| `settlement_file_lines.raw_line`                         | Restricted (may hold names)  | Nulled after 13 months; parsed columns kept                                                                                                | Nightly job                          |
-| `reconciliation_breaks` + evidence                       | Restricted                   | 10 years                                                                                                                                   | —                                    |
-| Recipient tracking tokens                                | Confidential                 | 30-day validity; HMAC, nothing stored                                                                                                      | Stateless                            |
-| `prefunding_instructions.bank_details_*`                 | Restricted                   | Encrypted (Phase 1 `CryptoService`, `ENCRYPTION_KEYS`), retained with the account                                                          | Envelope encryption                  |
+| Data                                                             | Class            | Retention                                     | Notes                                                                                                   |
+| ---------------------------------------------------------------- | ---------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `transfer_cross_border_details` incl. snapshots                  | Restricted (PII + financial) | 10 years after transfer (AML record-keeping; CEMAC 10 y, AO/MZ 10 y)        | Snapshots are JSON with last-4 / masked identifiers only; full ID numbers never copied                  |
+| `transfer_tracking_events`                                       | Internal         | 10 years, partitions detached to cold storage after 24 months | No PII in `context`                                                                                      |
+| `intl_quotes`                                                    | Internal         | 13 months (pricing disputes), shadow quotes 90 days | Aggregated for Phase 7 pricing analytics before purge                                                   |
+| `fx_rates`                                                       | Internal         | 7 years (evidence of rate applied)            | Partitions compressed after 3 months                                                                    |
+| `settlement_files`, `regulatory_reports` objects                 | Restricted       | 10 years, S3 Object Lock compliance mode 7 y + lifecycle to Glacier | Includes recipient names and account masks; signed URLs 5 min; download audited                  |
+| `nostro_accounts.bank_account_encrypted`                         | Secret           | Life of account + 10 years                    | Encrypted with `ENCRYPTION_KEY`, mask for display                                                       |
+| `prefunding_instructions`                                        | Internal (financial) | 10 years                                   | —                                                                                                       |
+| Recipient tracking tokens                                        | Confidential     | 7 days validity, hash only stored             | Rotatable from the admin explorer                                                                       |
 
 ---
 
 ## 6. API & Integration Surface
 
-### 6.1 Endpoints (all under `/v1`; customer endpoints require realm `CUSTOMER` + ownership, admin endpoints require the listed permission; every mutation audited)
+### 6.1 Endpoints (all under `/v1`; customer endpoints require realm `CUSTOMER` and ownership, admin endpoints the listed permission; every mutation audited)
 
-| Method                | Path                                                                                | Permission                                                                 | Description                                                                                                                                                                                                                                                           |
-| --------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET                   | `/corridors/public?from=CM`                                                         | public (cached 60 s)                                                       | Receive countries, rails, limits and indicative rate for the send-money UI; only `FRIENDS_FAMILY`/`LIVE` corridors visible to the caller per flags                                                                                                                    |
-| GET                   | `/intl/purpose-codes?corridor=cm-ao&locale=fr`                                      | customer                                                                   | Allowed purpose and source-of-funds codes with labels                                                                                                                                                                                                                 |
-| POST                  | `/intl/quotes`                                                                      | customer (`profile:read`), `Idempotency-Key`                               | Create a locked quote: `{ corridorKey \| recvCountryCode, sendAmount \| recvAmount, sendCurrency, beneficiaryId? }` → rate, fee, receive amount, `lockedUntil`, `expectedPayoutAt`; 409 `CORRIDOR_LIQUIDITY_LOW`, 503 `FX_STALE_RATE` / `FX_FROZEN` / `INTL_DISABLED` |
-| GET                   | `/intl/quotes/:id`                                                                  | customer (owner)                                                           | Quote state and remaining lock seconds                                                                                                                                                                                                                                |
-| POST                  | `/intl/transfers`                                                                   | customer, `@RequiresRecentMfa` above corridor threshold, `Idempotency-Key` | Confirm: `{ quoteId, beneficiaryId, purposeCode, sourceOfFundsCode, relationshipCode?, declarationAccepted: true }` → 202 transfer with `trackingRef`; 410 `QUOTE_EXPIRED` (+ fresh quote in body), 422 limits/fields                                                 |
-| GET                   | `/intl/transfers`                                                                   | customer (owner)                                                           | List with state, corridor, amounts                                                                                                                                                                                                                                    |
-| GET                   | `/intl/transfers/:id`                                                               | customer (owner)                                                           | Detail incl. quote, route display name, timeline summary                                                                                                                                                                                                              |
-| GET                   | `/intl/transfers/:id/timeline`                                                      | customer (owner)                                                           | `transfer_tracking_events`                                                                                                                                                                                                                                            |
-| POST                  | `/intl/transfers/:id/cancel`                                                        | customer (owner)                                                           | Allowed only in `QUOTED`/`FUNDING` before the funding leg is submitted                                                                                                                                                                                                |
-| GET                   | `/track/:token`                                                                     | public, 30/min/IP, `intl.tracking.public-link`                             | Recipient tracking: masked sender, amount, currency, state, ETA                                                                                                                                                                                                       |
-| GET                   | `/intl/transfers/:id/receipt`                                                       | customer (owner)                                                           | PDF receipt (rate, fee, reference, regulator disclosures)                                                                                                                                                                                                             |
-| GET/POST/PATCH        | `/corridors`, `/corridors/:id`                                                      | `corridors:read` / `corridors:write`                                       | CRUD; status changes to `FRIENDS_FAMILY`/`LIVE` need `corridors:approve` by a second user                                                                                                                                                                             |
-| GET/POST/PATCH/DELETE | `/corridors/:id/routes`                                                             | `corridors:write`                                                          | Route management, `POST …/routes/:rid/test` runs `validateAccount` against a test MSISDN                                                                                                                                                                              |
-| GET                   | `/fx/rates?pair=EUR/AOA&from=&to=`                                                  | `fx:read`                                                                  | Ticks and latest                                                                                                                                                                                                                                                      |
-| GET/PATCH             | `/fx/sources`, `/fx/sources/:id`                                                    | `fx:read` / `fx:write`                                                     | Sources, enable/disable, poll interval                                                                                                                                                                                                                                |
-| POST                  | `/fx/freeze`, `/fx/unfreeze`                                                        | `fx:freeze`                                                                | Sets `intl.fx.freeze` with reason (audited, alerts)                                                                                                                                                                                                                   |
-| GET                   | `/fx/quotes?corridor=&status=&shadow=`                                              | `fx:read`                                                                  | Quote explorer                                                                                                                                                                                                                                                        |
-| GET/POST/PATCH        | `/nostro`, `/nostro/:id`                                                            | `nostro:read` / `nostro:write`                                             | Accounts, reserves, linked provider accounts                                                                                                                                                                                                                          |
-| GET                   | `/nostro/:id/liquidity`                                                             | `nostro:read`                                                              | Ledger balance, reserved, in-flight, available, 24 h projected outflow                                                                                                                                                                                                |
-| POST/PATCH            | `/nostro/:id/prefunding`, `/nostro/prefunding/:pid/approve\|sent\|received\|cancel` | `nostro:write` (+ `nostro:approve` second user)                            | Pre-funding lifecycle                                                                                                                                                                                                                                                 |
-| GET                   | `/settlement/batches?nostro=&date=`                                                 | `settlement:read`                                                          | Batches with totals and file list                                                                                                                                                                                                                                     |
-| POST                  | `/settlement/batches/:id/close`, `…/generate`, `…/deliver`, `…/redeliver`           | `settlement:write`                                                         | Manual cut-off, regeneration (new file version), redelivery                                                                                                                                                                                                           |
-| POST                  | `/settlement/files/ingest`                                                          | `settlement:write`                                                         | Upload a partner statement manually (multipart) when SFTP is unavailable                                                                                                                                                                                              |
-| GET                   | `/settlement/files/:id/download`                                                    | `settlement:read`                                                          | Signed URL, audited                                                                                                                                                                                                                                                   |
-| GET                   | `/reconciliation/runs`, `/reconciliation/breaks?status=&type=&nostro=`              | `reconciliation:read`                                                      | Runs and breaks                                                                                                                                                                                                                                                       |
-| POST                  | `/reconciliation/runs`                                                              | `reconciliation:write`                                                     | On-demand run for (nostro, value date)                                                                                                                                                                                                                                |
-| PATCH                 | `/reconciliation/breaks/:id`                                                        | `reconciliation:write` (+ `reconciliation:approve` above USD 500 eq.)      | Assign, resolve with action + evidence                                                                                                                                                                                                                                |
-| GET                   | `/intl/transfers/admin?state=&corridor=&trackingRef=`                               | `intl-transfers:read`                                                      | Cross-border explorer                                                                                                                                                                                                                                                 |
-| POST                  | `/intl/transfers/:id/release`, `…/refund`, `…/retry-payout`                         | `intl-transfers:resolve` (+ second approver above threshold)               | Operator actions on `HELD`                                                                                                                                                                                                                                            |
-| GET/POST              | `/regulatory-reports`, `/regulatory-reports/generate`                               | `regulatory-reports:read` / `regulatory-reports:write`                     | List, generate for type + period                                                                                                                                                                                                                                      |
-| PATCH                 | `/regulatory-reports/:id`                                                           | `regulatory-reports:submit`                                                | Mark reviewed / submitted with reference                                                                                                                                                                                                                              |
-| GET                   | `/regulatory-reports/:id/download`                                                  | `regulatory-reports:read`                                                  | Signed URL, audited                                                                                                                                                                                                                                                   |
+| Method   | Path                                                                         | Permission                                                                  | Description                                                                                                                                                                                                                 |
+| -------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET      | `/corridors/public?from=CM`                                                  | `@Public()`, cached 60 s                                                    | Receive countries, rails, limits, indicative rate, ETA for the send-money UI; only corridors visible to the caller's flags and status                                                                                       |
+| GET      | `/intl/regulatory-codes?corridor=cm-ao&locale=fr`                            | customer                                                                    | Allowed purpose, source-of-funds and relationship codes with labels                                                                                                                                                         |
+| POST     | `/intl/quotes`                                                               | customer (`transfers:create`), `Idempotency-Key`                            | `{ corridorKey, sendAmountMinor \| recvAmountMinor, beneficiaryId? }` → rate, markup, fee lines, receive amount, `lockedUntil`, `signature`; 409 `CORRIDOR_LIQUIDITY_LOW`, 503 `FX_RATE_STALE` / `FX_FROZEN` / `INTL_DISABLED` |
+| GET      | `/intl/quotes/:id`                                                           | customer (owner)                                                            | Quote state and remaining lock seconds computed server-side                                                                                                                                                                 |
+| POST     | `/intl/transfers`                                                            | customer (`transfers:create`), `@RequiresRecentMfa` above `mfaThresholdMinor`, `Idempotency-Key` | `{ quoteId, beneficiaryId, purposeCode, sourceOfFundsCode, relationshipCode?, declarationAccepted: true }` → 202 `{ transferId, reference, trackingRef, state, nextAction }`; 409 `QUOTE_EXPIRED` with `nextAction=REQUOTE`; 422 missing regulatory fields |
+| GET      | `/intl/transfers`                                                            | customer (owner)                                                            | Cursor-paginated list with corridor, state, amounts, tracking ref                                                                                                                                                           |
+| GET      | `/intl/transfers/:id`                                                        | customer (owner)                                                            | Detail incl. quote, route display name, ETA, `reviewState` slot (Phase 8)                                                                                                                                                    |
+| GET      | `/intl/transfers/:id/timeline`                                               | customer (owner)                                                            | `transfer_tracking_events` as copy keys + timestamps                                                                                                                                                                        |
+| POST     | `/intl/transfers/:id/cancel`                                                 | customer (owner)                                                            | Allowed in `QUOTED` / `FUNDING` before the pull leg is submitted                                                                                                                                                            |
+| GET      | `/intl/transfers/:id/receipt`                                                | customer (owner)                                                            | PDF receipt (Phase 5 renderer) with locked rate, markup disclosure, purpose, regulator notice                                                                                                                              |
+| GET      | `/track/:token`                                                              | `@Public()`, 30 req/min/IP, flag `intl.tracking.public-link`                | Recipient tracking: masked sender, receive amount, state, ETA, provider display name                                                                                                                                        |
+| GET      | `/corridors`, `/corridors/:id`                                               | `corridors:read`                                                            | Matrix and detail incl. routes, liquidity, flags                                                                                                                                                                            |
+| POST/PATCH | `/corridors`, `/corridors/:id`                                             | `corridors:write`                                                           | Create / edit configuration (limits, markup, lock, cut-off, rules, disclosures)                                                                                                                                             |
+| POST     | `/corridors/:id/status`                                                      | `corridors:write` + `corridors:approve` (second user) for `FRIENDS_FAMILY`/`LIVE` | Status transition with checklist evaluation; `PAUSED` with reason is single-user                                                                                                                                     |
+| GET/POST/PATCH/DELETE | `/corridors/:id/routes`, `/corridors/:id/routes/:rid`           | `corridors:write`                                                           | Route management; `POST …/routes/:rid/test` runs `validateAccount` against a test identifier                                                                                                                               |
+| GET      | `/fx/rates?pair=XAF/AOA&from=&to=`                                           | `fx:read`                                                                   | Latest tick, derivation, age, history                                                                                                                                                                                       |
+| GET/PATCH | `/fx/sources`, `/fx/sources/:id`                                            | `fx:read` / `fx:write`                                                      | Sources, enable/disable, poll and staleness settings                                                                                                                                                                        |
+| POST     | `/fx/rates/manual`, `/fx/rates/manual/:id/approve`                           | `fx:write` (maker) / `fx:approve` (checker, different user)                 | Manual rate entry with expiry                                                                                                                                                                                               |
+| POST     | `/fx/freeze`, `/fx/unfreeze`                                                 | `fx:freeze`                                                                 | Sets `intl.fx.freeze` with reason (audited, alerts)                                                                                                                                                                         |
+| GET      | `/fx/quotes?corridor=&status=&shadow=`                                       | `fx:read`                                                                   | Quote explorer                                                                                                                                                                                                              |
+| GET/POST/PATCH | `/nostro`, `/nostro/:id`                                               | `nostro:read` / `nostro:write`                                              | Accounts, reserves, linked provider accounts, SFTP settings                                                                                                                                                                 |
+| GET      | `/nostro/:id/liquidity`                                                      | `nostro:read`                                                               | Ledger balance, reserved, in-flight, available, 24 h projected outflow                                                                                                                                                      |
+| POST     | `/nostro/:id/prefunding`                                                     | `nostro:write`                                                              | Draft a pre-funding instruction                                                                                                                                                                                             |
+| POST     | `/nostro/prefunding/:pid/approve`, `…/sent`, `…/received`, `…/cancel`        | `nostro:approve` (approve, different user) / `nostro:write`                 | Pre-funding lifecycle; `received` posts the receive journal                                                                                                                                                                 |
+| GET      | `/settlement/batches?nostro=&date=`, `/settlement/batches/:id`               | `settlement:read`                                                           | Batches with totals and files                                                                                                                                                                                               |
+| POST     | `/settlement/batches/:id/close`, `…/generate`, `…/deliver`, `…/redeliver`    | `settlement:write`                                                          | Manual cut-off, (re)generation as a new file version, (re)delivery                                                                                                                                                          |
+| POST     | `/settlement/files/ingest`                                                   | `settlement:write`                                                          | Manual partner statement upload (multipart) when SFTP is unavailable                                                                                                                                                       |
+| GET      | `/settlement/files/:id/download`                                             | `settlement:read`                                                           | Signed URL (5 min), audited                                                                                                                                                                                                 |
+| GET      | `/recon/runs?nostro=`, `/recon/breaks?kind=&nostro=`                         | `recon:read` (Phase 5)                                                      | Phase 5 endpoints gain nostro filters and new kinds                                                                                                                                                                         |
+| POST     | `/recon/runs`                                                                | `recon:run` (Phase 5)                                                       | On-demand run for `(nostroAccountId, valueDate)`                                                                                                                                                                            |
+| PATCH    | `/recon/breaks/:id`                                                          | `recon:resolve` (+ `recon:approve` above USD 500 equivalent)                | Resolution actions with evidence                                                                                                                                                                                            |
+| GET      | `/intl/transfers/admin?state=&corridor=&trackingRef=&holdReason=`            | `intl-transfers:read`                                                       | Cross-border explorer                                                                                                                                                                                                       |
+| GET      | `/intl/transfers/admin/:id`                                                  | `intl-transfers:read`                                                       | Full view: quote, both journals, legs, tracking events, snapshots, files                                                                                                                                                    |
+| POST     | `/intl/transfers/:id/release`, `…/refund`, `…/retry-payout`, `…/rotate-tracking-token` | `intl-transfers:resolve` (+ second approver above threshold for refund) | Operator actions on `HELD`                                                                                                                                                                                                  |
+| GET/POST | `/regulatory-reports`, `/regulatory-reports/generate`                        | `regulatory-reports:read` / `regulatory-reports:write`                      | List; generate for type + period (async, queue `intl:reports`)                                                                                                                                                              |
+| PATCH    | `/regulatory-reports/:id`                                                    | `regulatory-reports:submit`                                                 | Mark reviewed / submitted / accepted / rejected with reference                                                                                                                                                              |
+| GET      | `/regulatory-reports/:id/download`                                           | `regulatory-reports:read`                                                   | Signed URL, audited                                                                                                                                                                                                         |
 
-`API_ROUTES.intl`, `.corridors`, `.fx`, `.nostro`, `.settlement`, `.reconciliation`, `.regulatoryReports` added to `packages/shared/src/constants/api-routes.ts`; `PERMISSION_RESOURCES` gains `corridors`, `fx`, `nostro`, `settlement`, `reconciliation`, `regulatory-reports`, `intl-transfers`.
+`API_ROUTES.intl`, `.corridors`, `.fx`, `.nostro`, `.settlement`, `.regulatoryReports`, `.track` are added to `packages/shared/src/constants/api-routes.ts`; `PERMISSION_RESOURCES` gains `corridors`, `fx`, `nostro`, `settlement`, `regulatory-reports`, `intl-transfers`; `PERMISSIONS` gains the strings above with descriptions; roles `treasury_ops`, `finance_ops`, `compliance_officer` (Phase 5/2 seeds) receive the new permissions in the seed.
 
 ### 6.2 Events (transactional outbox, `aggregateType` in brackets)
 
-| Event                                                                                          | Payload (no PII beyond ids/last4)                                                                                                                        | Consumers                                                |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `intl.quote.created` / `intl.quote.expired` [FxQuote]                                          | quoteId, corridorKey, sendAmount, recvAmount, customerRateScaled, markupBps, shadow                                                                      | Phase 7 (pricing analytics), Phase 10                    |
-| `intl.transfer.created` [Transfer]                                                             | transferId, trackingRef, corridorKey, sendAmount/ccy, recvAmount/ccy, purposeCode, sourceOfFundsCode, senderKycLevel, recipientCountry, counterpartyHash | Phase 8 (screening, velocity), notifications, Phase 10   |
-| `intl.transfer.state_changed` [Transfer]                                                       | transferId, from, to, holdReason?, routeProviderKey?                                                                                                     | Tracking, notifications, Phase 8, Phase 11 push          |
-| `intl.transfer.paid_out` / `.refunded` / `.failed` [Transfer]                                  | transferId, trackingRef, providerTransactionId, paidOutAt, fxJournalId                                                                                   | Notifications (sender + recipient), settlement, Phase 10 |
-| `intl.transfer.held` [Transfer]                                                                | transferId, holdReason, slaAt                                                                                                                            | Ops alerting, Phase 8 case management                    |
-| `intl.fx.rate_stale` / `intl.fx.frozen` / `intl.fx.unfrozen` [FxRateSource]                    | pair, ageSeconds, sourceKey, actorUserId?                                                                                                                | Alerting, Phase 7                                        |
-| `intl.nostro.liquidity_low` [NostroAccount]                                                    | nostroCode, availableMinor, minReserveMinor, projected24hMinor                                                                                           | Treasury ops, Phase 7                                    |
-| `intl.prefunding.received` [PrefundingInstruction]                                             | id, nostroCode, receivedMinor                                                                                                                            | Phase 7, recon                                           |
-| `intl.settlement.batch_closed` / `.files_delivered` / `.delivery_failed` [SettlementBatch]     | batchId, nostroCode, valueDate, totals, fileIds                                                                                                          | Ops, Phase 10                                            |
-| `intl.recon.run_completed` / `intl.recon.break_opened` / `.break_resolved` [ReconciliationRun] | runId, matchRate, breakCount, breakType, amounts                                                                                                         | Ops dashboards, Phase 8, Phase 10                        |
-| `intl.regulatory.report_generated` / `.submitted` [RegulatoryReport]                           | reportId, type, period, rowCount                                                                                                                         | Compliance, Phase 8                                      |
+| Event                                                                                         | Payload (no PII beyond ids / last4 / hashes)                                                                                                     | Consumers                                                   |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `intl.quote.created` / `intl.quote.expired` / `intl.quote.consumed` [IntlQuote]              | quoteId, corridorKey, sendAmountMinor, recvAmountMinor, customerRateNum, midRateNum, markupBps, shadow                                             | Phase 7 pricing analytics, Phase 10                         |
+| `intl.transfer.created` [Transfer]                                                            | transferId, trackingRef, corridorKey, sendAmount/ccy, recvAmount/ccy, purposeCode, sourceOfFundsCode, relationshipCode, senderKycLevel, recipientCountry, counterpartyHash | Phase 8 screening and velocity, notifications, Phase 10 |
+| `intl.transfer.state_changed` [Transfer]                                                      | transferId, trackingRef, from, to, holdReason?, routeProviderKey?                                                                                 | Tracking, notifications, Phase 8, Phase 11 push             |
+| `intl.transfer.held` / `intl.transfer.released` [Transfer]                                    | transferId, holdReason, holdSlaAt, actorUserId?                                                                                                  | Ops alerting, Phase 8 case management                       |
+| `intl.transfer.rerouted` [Transfer]                                                           | transferId, fromProviderKey, toProviderKey, reason                                                                                               | Ops dashboards, Phase 10                                    |
+| `intl.transfer.paid_out` / `.refunded` / `.failed` [Transfer]                                 | transferId, trackingRef, providerTransactionId, paidOutAt, sendJournalId, recvJournalId                                                           | Notifications, settlement, Phase 7 profitability, Phase 10  |
+| `intl.fx.tick` [FxRateSource]                                                                 | sourceKey, pair, rateNum, capturedAt                                                                                                             | Phase 7 shadow comparison                                   |
+| `intl.fx.rate_stale` / `intl.fx.deviation_rejected` / `intl.fx.frozen` / `intl.fx.unfrozen` [FxRateSource] | pair, ageSeconds, sourceKey, deviationBps?, actorUserId?                                                                           | Alerting, Phase 7                                           |
+| `intl.nostro.liquidity_low` / `intl.nostro.liquidity_restored` [NostroAccount]               | nostroKey, availableMinor, minReserveMinor, projected24hMinor                                                                                    | Treasury ops, Phase 7                                       |
+| `intl.prefunding.approved` / `.received` [PrefundingInstruction]                              | id, nostroKey, expectedMinor, receivedMinor                                                                                                      | Phase 7, recon                                              |
+| `intl.settlement.batch_closed` / `.files_generated` / `.files_delivered` / `.delivery_failed` [SettlementBatch] | batchId, nostroKey, valueDate, totals, fileIds                                                                                 | Ops, Phase 10                                               |
+| `intl.settlement.statement_ingested` / `.statement_quarantined` [SettlementFile]              | fileId, nostroKey, lineCount, parseError?                                                                                                        | Recon, ops                                                  |
+| `recon.break.opened` / `recon.break.resolved` (Phase 5 events, new kinds)                     | breakId, kind, nostroKey, amountMinor                                                                                                            | Ops dashboards, Phase 8, Phase 10                           |
+| `intl.regulatory.report_generated` / `.submitted` / `.rejected` [RegulatoryReport]            | reportId, type, period, rowCount                                                                                                                 | Compliance, Phase 8, Phase 10                               |
 
-Outbound partner webhooks are not introduced in Phase 6 (Phase 9 partner portal); payout provider webhooks keep flowing through Phase 4's `/v1/webhooks/wallet/:providerKey`.
+Payout provider webhooks keep flowing through Phase 4 `/v1/webhooks/wallet/:providerKey`; outbound partner webhooks arrive with the Phase 9 partner portal.
 
 ### 6.3 External integrations
 
-| Integration                                                                                                                                                                 | Auth                                                                    | Endpoints / protocol                                                                                  | Sandbox                                                                                           | Rate limits                                                                                   | Failure modes & handling                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Market rate vendor** (one of the mainstream FX data APIs; selected W1, Q6.1)                                                                                              | API key in header or query via Phase 3 credential store                 | `GET /latest?base=EUR&symbols=AOA,MZN,USD,XAF` (vendor-specific), optional `/timeseries` for backfill | Free/dev tier with delayed data                                                                   | Typically 1,000–100,000 req/month on paid tiers; we poll once per 60 s ≈ 44k/month → mid tier | Timeout/5xx → keep last good tick, raise age; age > corridor `fxMaxRateAgeSeconds` → `FX_STALE_RATE` and auto-freeze pair; schema drift → Zod failure, alert; AOA/MZN official vs parallel rates → corridor markup covers; vendor outage > 1 h → treasury manual rate entry (`PARTNER_QUOTE` source, four-eyes) |
-| **Pegged parities**                                                                                                                                                         | —                                                                       | `Setting` rows                                                                                        | —                                                                                                 | —                                                                                             | Change only via admin with approval; yearly review task                                                                                                                                                                                                                                                         |
-| **Payout providers** (Phase 4 connectors: `airtel-money` GA/TD/CG, `mtn-momo` CM/CG, `orange-money` CM/CF/GW, `moov-money` TD/CF?, `unitel-money` AO, `emola` MZ)           | Per Phase 4 adapter                                                     | `transferFunds` PUSH, `validateAccount`, `getStatement`                                               | Simulator profiles; sandboxes where providers offer                                               | Per Phase 3 `ProviderConnection.rateLimit`                                                    | Circuit open → route fallback before submission; `UNKNOWN` → `HELD` via Phase 4 resolution; provider fee variance → `FEE_MISMATCH` break                                                                                                                                                                        |
-| **Aggregator / bank payout partner** (`aggregator-payout` connector; candidates evaluated W1: pan-African payout hubs covering CV, ST, GW bank accounts and mobile wallets) | OAuth2 client credentials or HMAC-signed requests (SDK auth strategies) | Create payout, get status, list payouts, balance; webhook on completion                               | Vendor sandbox with test bank accounts                                                            | Documented per vendor, typically 10–50 rps                                                    | Same taxonomy as Phase 4; aggregator-side FX **disabled** (we pay out in destination currency from our pre-funded balance); bank payout T+0/T+1 → `payoutSlaMinutes` per corridor                                                                                                                               |
-| **Partner SFTP** (sponsor bank and payout partners)                                                                                                                         | SSH key auth, host-key pinning, static egress IPs allow-listed          | `PUT /outbound/<date>/…`, `GET /inbound/<date>/…`                                                     | Partner UAT SFTP; staging falls back to an in-house `atmoz/sftp` container in the simulator group | —                                                                                             | Connection refused/timeouts → retry with backoff (5 attempts over 2 h) then `delivery_failed` alert + manual upload path; duplicate inbound file (same sha256) ignored; partial upload → write to temp name then rename                                                                                         |
-| **S3-compatible bucket** (Phase 2 documents infrastructure)                                                                                                                 | IAM keys / signed URLs                                                  | PUT/GET with Object Lock                                                                              | MinIO locally                                                                                     | —                                                                                             | Retry; files are reproducible from DB so loss is recoverable                                                                                                                                                                                                                                                    |
-| **Phase 5 ledger & transfer saga**                                                                                                                                          | internal                                                                | `LedgerService.postJournal(entries, idempotencyKey)`, `TransferSaga` hooks                            | —                                                                                                 | —                                                                                             | Unbalanced journal → exception, transfer `HELD`, page on-call                                                                                                                                                                                                                                                   |
+| Integration                                                                                                                                  | Auth                                                                                            | Endpoints / protocol                                                                                                 | Sandbox                                                                      | Rate limits                                                              | Failure modes and handling                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FX data vendor** (one commercial mid-market feed with AOA/MZN coverage; selected W1, Q6.1)                                                 | API key via Phase 3 `ProviderCredential` (`API_KEY_HEADER`)                                      | `GET /latest?base=EUR&symbols=AOA,MZN,USD` and `/historical/<date>` (vendor-specific), polled every 60 s               | Free/dev tier with delayed data for CI; `fx-vendor-sim` container on staging | Typically 1 000–100 000 req/month by tier; 60 s polling ≈ 45 000/month | Timeout/5xx → keep last good tick, age metric grows, `FX_RATE_STALE` after `maxAgeSeconds`; wrong tick → deviation guard rejects and alerts; outage → manual rate under four-eyes            |
+| **Pegged parities**                                                                                                                          | —                                                                                               | `Setting intl.fx.peg.<base>-<quote>` rows (EUR/XAF, EUR/XOF, EUR/CVE, EUR/STN)                                           | n/a                                                                          | n/a                                                                      | Peg change is a legislative event; changing the setting requires `fx:approve` and emits an alert                                                                                             |
+| **Payout providers** (Phase 4 connectors: `mtn-momo` CM/CG, `orange-money` CM/CF/GW, `airtel-money` GA/TD/CG, `moov-money` TD/CF, `unitel-money` AO, `emola` MZ) | Per Phase 4 adapter (OAuth2 client credentials, API key + HMAC, mTLS where required)            | `transferFunds` (PUSH), `getTransactionStatus`, `validateAccount`, `getStatement`, webhooks                            | Provider sandboxes where offered; Phase 4 simulator profiles everywhere      | Phase 3 `Provider.rateLimitPerSecond` / `maxConcurrency` enforced         | `UNKNOWN` → `HELD` until Phase 4 resolution; circuit open → route fallback; `LIMIT_EXCEEDED` → `FAILED` + refund                                                                           |
+| **Aggregator / bank payout partner** (`@bi-rem/connector-aggregator-payout`; pan-African payout hub covering CV, ST and GW bank accounts)     | OAuth2 client credentials or HMAC-signed requests (SDK auth strategies)                         | Create payout, get payout status, list payouts, balance, bank list; webhook on completion with signature               | Vendor sandbox with test bank codes; `aggregator-sim` on staging             | Vendor-specific, typically 10–50 req/s                                   | Async completion (minutes to T+1 for bank rails) → `PAYOUT_PENDING` with longer SLA; rejects → refund; duplicate webhook → Phase 4 dedupe                                                     |
+| **Partner SFTP** (sponsor bank, payout partners)                                                                                             | SSH key auth (`AuthScheme.SSH_KEY`), host key pinned, egress from Phase 3 static IPs             | `PUT <outboundPath>/<yyyymmdd>/<file>`, `GET <inboundPath>/<yyyymmdd>/*`, hourly poll                                   | `sftp-sim` (atmoz/sftp) on staging with partner folder layouts               | n/a                                                                      | Connection failure → retry with backoff, `delivery_failed` alert after 3 attempts, manual download/upload path; partial upload → write to `.tmp` then rename                                 |
+| **S3-compatible object storage**                                                                                                             | IAM key with write-once policy, signed URLs for reads                                           | PUT/GET with Object Lock compliance mode                                                                               | MinIO locally                                                                | n/a                                                                      | PUT failure → batch stays `GENERATED`, retry; integrity by SHA-256 stored on the row                                                                                                         |
+| **Phase 5 ledger and saga**                                                                                                                  | internal                                                                                        | `LedgerService.post(journal)` ×2 with `fxPairJournalId`, `SagaStepRegistry.register('CROSS_BORDER', steps)`             | —                                                                            | —                                                                        | Invariant violations raise before commit; chaos-tested                                                                                                                                      |
+| **Phase 7 FX engine** (from M7.3, 2027-07-16)                                                                                                | internal                                                                                        | `FxRateProvider` implementation `EngineFxRateProvider` selected per corridor by `fx.corridor.<pair>.enabled`            | staging                                                                      | —                                                                        | Engine unavailable → fall back to the table provider; table stale > 24 h → corridor auto-`PAUSED`                                                                                            |
 
 ---
 
 ## 7. Portal Changes
 
-### 7.1 Admin portal (`apps/admin`, flag `admin.intl.console`)
+### 7.1 Admin portal (`apps/admin`, module visible behind `admin.intl.console`)
 
-| Screen                  | Route                                     | Components / behaviour                                                                                                                                                                                                                                                                                                                                                               |
-| ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| International dashboard | `/intl`                                   | Tiles: transfers today by state, quotes/min and conversion, payout p95 per corridor, open `HELD` with SLA colour, liquidity per nostro vs reserve, FX age per pair, open recon breaks by age, settlement batches due; links to runbooks                                                                                                                                              |
-| Corridor matrix         | `/intl/corridors`                         | 11×11 grid (send × receive) coloured by status; click → corridor detail; filters by regulator and status                                                                                                                                                                                                                                                                             |
-| Corridor detail         | `/intl/corridors/[key]`                   | Tabs: Config (limits, markup, lock, SLA, cut-off, compliance rules, allowed purposes), Routes (ordered list with provider health badge from Phase 3 status, drag priority, test route), Licensing (regulator, basis, partner, evidence document, approvals), Flags (`enabled`/`live`, rollout %, friends-and-family list), Activity (audit). Status change wizard with maker-checker |
-| FX console              | `/intl/fx`                                | Latest rate per pair with age and source, sparkline (24 h), markup table per corridor, freeze/unfreeze button with reason modal, source health, quote explorer (shadow toggle), manual `PARTNER_QUOTE` entry (four-eyes)                                                                                                                                                             |
-| Nostro & pre-funding    | `/intl/nostro`, `/intl/nostro/[id]`       | Balance, reserved, in-flight, available, projected outflow, linked float wallets (Phase 4 snapshots), pre-funding list with lifecycle actions, bank details (masked, reveal audited)                                                                                                                                                                                                 |
-| Settlement              | `/intl/settlement`                        | Calendar by nostro and value date; batch detail with totals, file list (download), delivery status, redeliver, manual ingest upload                                                                                                                                                                                                                                                  |
-| Reconciliation          | `/intl/reconciliation`                    | Runs with match rate; breaks table (type, age, amounts per source, suggested action); break detail drawer: side-by-side ledger / leg / partner line, evidence upload, resolution action, approval queue                                                                                                                                                                              |
-| Cross-border explorer   | `/intl/transfers`, `/intl/transfers/[id]` | Search by tracking ref, user, corridor, state; detail: saga timeline, quote, route, Phase 4 legs (deep link to wallet explorer), ledger journals, regulatory fields (masked), actions release / refund / retry-payout with four-eyes                                                                                                                                                 |
-| Regulatory reports      | `/intl/reports`                           | Generate (type, period), list with status, download (audited), mark reviewed / submitted with reference, layout version                                                                                                                                                                                                                                                              |
-| Purpose codes           | `/intl/purpose-codes`                     | Reference list editing (labels, regulator mapping, min KYC)                                                                                                                                                                                                                                                                                                                          |
+| Route                                     | Screen / components                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/international`                          | **Overview dashboard**: tiles for transfers today by state, held transfers by reason and age, quote-to-confirm conversion, payout p95 by corridor, rate age per source with freeze banner, nostro available vs reserve (sparkline), last settlement delivery per partner, recon match rate; links to runbooks.                                                                                                             |
+| `/international/corridors`                | **Corridor matrix** (send country × receive country) coloured by status with flag state; filters; `CorridorStatusBadge`, `CorridorFlagToggle` (flag edits go through Phase 1 flag API with audit).                                                                                                                                                                                                                       |
+| `/international/corridors/[id]`           | **Corridor detail**: configuration form (limits with currency-aware inputs using `Money`, markup bps with resulting customer-rate preview, lock/grace seconds, cut-off/timezone, SLA, required fields, `compliance_rules` editor with JSON schema validation, disclosures per locale), routes table with drag-order priority, test-route drawer, **status workflow** with checklist and second-approver modal, licence/partner panel, liquidity panel of the routes' nostros, recent transfers. |
+| `/international/fx`                       | **FX console**: pairs grid (latest tick, age, source, derivation), rate history chart (Phase 1 charting), sources table (enable/disable, poll, staleness), manual-rate maker-checker drawer, freeze/unfreeze with reason, quote explorer (incl. shadow quotes with "would have been" rate).                                                                                                                                 |
+| `/international/nostro`                   | **Nostro & pre-funding**: accounts list with available/reserved/in-flight, threshold editing, linked provider accounts, SFTP settings (no secrets displayed), pre-funding instructions kanban (`DRAFT → APPROVED → SENT → RECEIVED → RECONCILED`) with approve/sent/received actions and journal links.                                                                                                                        |
+| `/international/settlement`               | **Settlement**: batches by partner and value date, totals in both currencies, files with version, hash, delivery status, download (audited), redeliver, manual statement upload with parser preview before commit, quarantined files with parse errors.                                                                                                                                                                    |
+| `/recon` (Phase 5, extended)              | Nostro filter, new break kinds, settlement line drill-down (`SettlementLineDrawer`), resolution actions with evidence upload and second approver.                                                                                                                                                                                                                                                                         |
+| `/international/transfers`                | **Cross-border explorer**: filters (state, corridor, hold reason, tracking ref, provider, date), saved views ("held over SLA", "payout pending > 30 min").                                                                                                                                                                                                                                                              |
+| `/international/transfers/[id]`           | **Transfer inspector**: header with tracking ref and state, quote card (rate, markup, derivation, lock timestamps), both journals with entries (links to Phase 5 ledger screens), Phase 4 legs, tracking timeline, snapshots (masked), hold panel with release/refund/retry actions and evidence, settlement batch and report membership, notifications sent, rotate recipient token.                                       |
+| `/international/reports`                  | **Regulatory reports**: list by type/period/status, generate drawer, review/submit actions with submission reference, download, item drill-down to transfers, layout version shown.                                                                                                                                                                                                                                      |
+| `/international/codes`                    | **Regulatory codes catalogue**: purpose / source-of-funds / relationship codes with labels in three locales, regulator mapping, corridor restrictions; edits create a new `version`.                                                                                                                                                                                                                                       |
+
+Shared components: `MoneyInput` (exponent-aware), `RateDisplay` (scaled BIGINT → formatted, inverse shown), `CountdownBadge` (server time based), `FourEyesModal`, `EvidenceUploader` (reuses Phase 2 documents uploader).
 
 ### 7.2 Customer portal (`apps/web`, flag `portal.send-international`)
 
-| Screen                      | Route                             | Components / behaviour                                                                                                                                                                                                                                  |
-| --------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Send money entry            | `/send`                           | "Domestic" / "International" toggle (international only when the user's country has ≥ 1 visible corridor)                                                                                                                                               |
-| Choose destination          | `/send/international`             | Receive-country picker (flags, currency), rail picker (mobile money / bank) from `/corridors/public`, Phase 3 `ServiceStatusBanner` per destination                                                                                                     |
-| Beneficiary                 | `/send/international/beneficiary` | Pick or add (Phase 2 form, now with bank fields for CV/ST and `bankAccountCountryCode`); Phase 4 inline account validation with name-match hint                                                                                                         |
-| Amount & quote              | `/send/international/amount`      | Dual-entry amount (send or receive), live quote with **countdown ring** (`lockedUntil`), fee and rate breakdown ("1 XAF = 1.3942 AOA, includes our margin"), limits remaining (KYC level + corridor), liquidity-low message with retry; re-quote button |
-| Compliance declaration      | `/send/international/declaration` | Purpose of transfer, source of funds, relationship (select lists from `/intl/purpose-codes`, localised), declaration checkbox with regulator text (fr for CEMAC, pt for PALOP), KYC upgrade prompt when the purpose requires a higher level             |
-| Review & confirm            | `/send/international/review`      | Summary, recent-MFA step above threshold, `Idempotency-Key` generated client-side, submission → tracking page                                                                                                                                           |
-| Tracking                    | `/transfers/[id]`                 | Timeline component (states with timestamps, ETA, "delayed" notice), share tracking link to recipient (SMS resend), receipt download, cancel while allowed                                                                                               |
-| Recipient tracking (public) | `/track/[token]`                  | No login; masked sender first name, amount in receive currency, state, provider display name, ETA; mobile-first; `pt`/`fr`/`en` by `Accept-Language`                                                                                                    |
-| Transfers list              | `/transfers`                      | Domestic and international mixed, badge with corridor flag pair                                                                                                                                                                                         |
+| Route                              | Screen / behaviour                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/send`                            | Phase 5 send entry gains a "Send to another country" card when `GET /corridors/public?from=<country>` returns at least one visible corridor.                                                                                                                                                                                                                                                                                             |
+| `/send/international/country`      | Receive country picker (flags, currency, ETA, rails, "recipient's provider may charge cash-out fees" disclosure per corridor).                                                                                                                                                                                                                                                                                                         |
+| `/send/international/recipient`    | Beneficiary picker filtered by country + rail; inline add-beneficiary (Phase 2 form with rail-specific fields: MSISDN + provider, or bank + account + BIC) with `validateAccount` name check.                                                                                                                                                                                                                                             |
+| `/send/international/amount`       | Dual amount inputs (send / receive) with debounced quote (`POST /intl/quotes`), rate line with markup disclosure ("Our rate includes a 2.5 % margin over the mid-market rate" — wording from compliance), fee breakdown, limits remaining, `CountdownBadge` from `lockedUntil` using server time offset; auto-requote prompt on expiry; errors mapped to copy (`CORRIDOR_LIQUIDITY_LOW` → "temporarily unavailable, try a smaller amount or later"). |
+| `/send/international/purpose`      | Purpose of transfer, source of funds, relationship (from `/intl/regulatory-codes`), declaration checkbox with regulator wording per corridor, link to help article.                                                                                                                                                                                                                                                                      |
+| `/send/international/review`       | Summary, locked countdown, recent-MFA step-up when above threshold (Phase 2 `@RequiresRecentMfa` flow), confirm with `Idempotency-Key` (UUIDv7 persisted in `sessionStorage` until response).                                                                                                                                                                                                                                             |
+| `/send/international/result`       | Tracking ref, timeline preview, share-tracking-link button (sends SMS to recipient again), receipt download.                                                                                                                                                                                                                                                                                                                           |
+| `/activity`, `/activity/[id]`      | Phase 5 history shows cross-border transfers with corridor flag pair and receive amount; detail shows `TimelineStepper` from `/intl/transfers/:id/timeline`, ETA, hold explanation copy, cancel when allowed, receipt.                                                                                                                                                                                                                  |
+| `/track/[token]` (public)          | Recipient page: masked sender first name + initial, receive amount, state, ETA, provider display name, "what to do if not received" help; mobile-responsive; no login; `noindex`.                                                                                                                                                                                                                                                      |
+| Help centre                        | Articles in `en/fr/pt`: how rates are set, lock window, purpose codes explained, what `HELD` means, regulator notices.                                                                                                                                                                                                                                                                                                                 |
 
-### 7.3 Mobile (Phase 11 inputs)
+### 7.3 Mobile (inputs for Phase 11)
 
-OpenAPI examples for quote → confirm → timeline, push notification payloads (`intl.transfer.state_changed`), countdown semantics (`lockedUntil` is server time; client shows `serverNow` from response header `Date`), deep link format `birem://track/<trackingRef>`.
+Phase 6 publishes the OpenAPI examples and `docs/handbooks/mobile-intl.md`: quote → confirm → poll contract with `nextAction` (`NONE`, `REQUOTE`, `CONFIRM_ON_PHONE`, `COMPLETE_PROFILE`), countdown semantics (server `lockedUntil` + `Date` header offset), push payload shape (`{ type: "intl.transfer.state_changed", transferId, trackingRef, state, copyKey }`), deep links `/send/intl/quote?corridor=cm-ga` and `/activity/<id>`, and the recipient tracking URL format. The mobile engineer reviews the API at M6.6 and M6.8.
 
 ---
 
@@ -1306,50 +1498,51 @@ OpenAPI examples for quote → confirm → timeline, push notification payloads 
 
 ### 8.1 Threats and controls
 
-| ID    | Threat                                                                                                                          | Vector                        | Controls                                                                                                                                                                                                                                                                                   |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| T6.1  | **Rate manipulation / stale-rate arbitrage** — customer locks a favourable rate during vendor outage or by replaying old quotes | Stale Redis tick, quote reuse | Age guard + auto-freeze, drift check at FX booking (`HELD` on `FX_DRIFT`), quote bound to user and consumed once (`@unique fx_quote_id`), `lockedUntil` enforced server-side, quotes signed in outbox log                                                                                  |
-| T6.2  | **Overselling liquidity** — concurrent quotes exceed nostro                                                                     | Race on reservation           | Reservation in the same DB transaction as quote insert with `SELECT … FOR UPDATE` on the nostro row (or advisory lock per nostro), view-based availability, Redis cache only for display                                                                                                   |
-| T6.3  | **Structuring / limit evasion** across corridors and beneficiaries                                                              | Many small transfers          | Corridor + KYC limits aggregated per user per day/month across all corridors (send-currency equivalent), `requiresManualReviewAboveMinor`, events to Phase 8 velocity rules; counterparty hash per leg                                                                                     |
-| T6.4  | **False purpose / source-of-funds declarations**                                                                                | User input                    | Declaration immutable, timestamped, tied to KYC level; business purposes need `LEVEL_2`; Phase 8 adds analytics                                                                                                                                                                            |
-| T6.5  | **Settlement file tampering or spoofing**                                                                                       | Compromised SFTP, MITM        | Host-key pinning, key-based auth, static egress IPs, SHA-256 recorded before upload and verified on partner acknowledgement, Object Lock copy, inbound files only from configured paths, parser hardening (size caps, strict CSV)                                                          |
-| T6.6  | **Recipient tracking link enumeration / data leak**                                                                             | Guessable tokens              | HMAC-SHA256 tokens (transferId, exp) with `INTL_TRACKING_HMAC_KEY`, 30-day expiry, masked data only, rate limiting per IP and per transfer, no indexing headers                                                                                                                            |
-| T6.7  | **Operator abuse** — self-approved pre-funding, break write-offs, manual rates                                                  | Insider                       | Maker-checker on pre-funding approval, break resolution above USD 500 eq., manual rate entry, corridor go-live; `TREASURY_OPS` role separate from `COMPLIANCE_OFFICER`; audit `before/after` on every action; Grafana alert on write-offs > threshold/day                                  |
-| T6.8  | **Double payout** after saga crash or duplicate provider webhook                                                                | Retry without idempotency     | Phase 4 `externalReference` idempotency, saga step idempotency keys on ledger journals, state check before dispatch, recon `DUPLICATE` break as backstop                                                                                                                                   |
-| T6.9  | **PII in files and logs**                                                                                                       | Settlement files, pino        | Files carry last4 + tracking ref only (full names only where the partner's layout legally requires, flagged per partner), pino redaction paths `purposeCode` kept, `senderIdentitySnapshot`, `bankDetails*`, `recipientSnapshot.displayName` redacted; semgrep rule `intl/no-snapshot-log` |
-| T6.10 | **Vendor API key leakage**                                                                                                      | Env/config                    | Keys in Phase 3 encrypted credential store, rotated 90 days, gitleaks rule for vendor key format                                                                                                                                                                                           |
-| T6.11 | **Refund abuse** — cancel after payout                                                                                          | Timing                        | Cancel allowed only before funding leg submission; refund after payout only via operator with partner reversal evidence                                                                                                                                                                    |
+| ID    | Threat                                                                                    | Vector                                                                           | Controls                                                                                                                                                                                                                                                                                                 |
+| ----- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T6.1  | Rate manipulation: client submits its own rate or amount, or replays an old quote          | Tampered request, replay                                                         | Server-side quote row is the only source of amounts; HMAC signature over canonical fields with `INTL_QUOTE_SIGNING_KEY`; quote bound to user id, corridor and beneficiary; single use (`CONSUMED`); expiry enforced on the server clock                                                                 |
+| T6.2  | Stale or wrong market rate served to customers                                            | Vendor outage, bad tick, clock skew                                              | `maxAgeSeconds` guard, deviation guard, pegged pairs independent of vendor, `intl.fx.freeze`, alerting, shadow comparison against Phase 7 engine from W7                                                                                                                                                 |
+| T6.3  | Double payout                                                                              | Worker redelivery, retry after `UNKNOWN`, reroute                                | One in-flight leg per transfer (`payoutAttempts` under `FOR UPDATE`), leg `externalReference` unique per attempt, Phase 4 idempotency store, `UNKNOWN` → `HELD` never auto-retried, recon backstop with `DUPLICATE` break kind                                                                            |
+| T6.4  | Unbalanced ledger across currencies                                                       | Bug in FX journal pairing                                                        | Each journal balances in one currency (Phase 5 trigger); pair link mandatory for `FX_CONVERT`; property tests; nightly invariant job: for each pair, `send principal × customerRate = recv amount` within rounding                                                                                        |
+| T6.5  | Liquidity exhaustion leading to failed payouts after debit                                | Burst of quotes, pre-funding late                                                | Reservation at quote time under lock, `minReserveMinor`, liquidity-low alerts, auto-pause corridor when available < 0 after reservations expire                                                                                                                                                         |
+| T6.6  | Tracking link enumeration / PII leak to third parties                                     | Guessable refs, token sharing                                                    | Tracking ref is 40-bit random, link requires a signed 7-day token, page shows masked data only, 30 req/min/IP, `noindex`, token rotation from admin                                                                                                                                                      |
+| T6.7  | Insider changes a corridor markup, limit or rate for gain                                 | Privileged admin                                                                 | Four-eyes on corridor activation, manual rates, pre-funding approval, refunds above threshold; all changes audited with before/after; weekly audit report to compliance; markup bounded by CHECK (0–2000 bps)                                                                                             |
+| T6.8  | Malicious or malformed partner statement files                                             | SFTP inbound, manual upload                                                      | Parsers are streaming, size-capped (50 MB), schema-validated, fuzzed (`fast-check` + corpus); files quarantined on error; no XML external entities (`camt.053` parsed with XXE disabled); files stored in a bucket with no execution path                                                                 |
+| T6.9  | SFTP credential or host spoofing                                                           | MITM, leaked key                                                                 | Host key pinning from the vault, SSH keys per partner and environment rotated with Phase 3 rotation policies, egress only from static IPs, no password auth                                                                                                                                              |
+| T6.10 | Regulatory field falsification (purpose/source chosen to evade review)                     | Customer behaviour                                                               | `compliance_rules` (amount above threshold, first transfer to a country, purpose/relationship mismatch) → `HELD`; snapshots immutable; Phase 8 adds screening and velocity                                                                                                                              |
+| T6.11 | Sensitive data in logs or events                                                           | Debug logging of quotes, snapshots                                               | pino redaction paths extended (`*.senderIdentitySnapshot`, `*.recipientSnapshot`, `*.bankAccount*`, `*.msisdn`); events carry hashes/last4 only; semgrep rule `intl/no-snapshot-in-log`                                                                                                                 |
+| T6.12 | Object storage tampering with settlement or regulatory evidence                            | Compromised IAM key                                                              | Object Lock compliance mode, write-once IAM policy, SHA-256 on the row verified on download, separate key from the documents bucket                                                                                                                                                                      |
 
 ### 8.2 Data classification
 
-Restricted: identity and recipient snapshots, bank details, settlement/regulatory files, break evidence. Confidential: quotes per user, tracking tokens, markups (commercially sensitive). Internal: rates, corridor config, aggregates. Public: corridor availability, indicative rates.
+Restricted: identity and recipient snapshots, bank account references, settlement and regulatory files. Confidential: quotes, rates, nostro balances, corridor configuration. Internal: tracking events, metrics. Public: `corridors/public` output, recipient page content (masked). Access to Restricted data requires `intl-transfers:read` or `settlement:read` and is logged; exports are signed URLs with 5-minute validity.
 
 ### 8.3 Regulatory notes (to be validated by counsel per country — owner: Compliance Analyst + PM, W1–W4)
 
-- **CEMAC / BEAC — COBAC**: payment services are governed by Règlement n° 04/18/CEMAC/UMAC/COBAC (payment services and payment institutions); foreign exchange by Règlement n° 02/18/CEMAC/UMAC/CM (2018, in force 2019) and its BEAC instructions — outward transfers require purpose documentation and are reported by the intermediary bank to BEAC; intra-CEMAC XAF transfers are not FX operations but remain reportable payment flows. BI-Rem captures purpose, source of funds, identity and amount per transfer and generates the FX declaration file in the sponsor bank's layout; thresholds (documentary requirements above set XAF amounts) are configured per corridor (`complianceRules.documentaryThresholdMinor`) once confirmed (Q6.2). AML/CFT: Règlement CEMAC 01/16 and national FIUs (ANIF Cameroon, ANIF Gabon, ANIF Congo, ANIF Chad, ANIF CAR, ANIF Equatorial Guinea) — record-keeping 10 years; STRs are Phase 8. GABAC is the regional FATF-style body. Data: Cameroon Law 2010/012 (cybersecurity) and forthcoming data-protection frameworks; Gabon's CNPDCP.
-- **Angola — BNA**: inbound remittances only in Phase 6 (AOA not freely convertible; outbound requires BNA FX regime compliance). Payout through a BNA-licensed partner (Unitel Money as EMI or a commercial bank); BNA reporting of inbound remittances through the partner; Lei 40/20 (payment system) and BNA notices on payment service providers; Lei 5/20 (AML/CFT); Lei 22/11 (data protection, APD).
-- **Mozambique — Banco de Moçambique**: inbound only; e-Mola/M-Pesa EMIs as payout partners; Lei 2/2008 and Aviso-based licensing of payment service providers; FX law (Lei 11/2009 and regulations) requires inbound remittance reporting by the receiving institution; AML Lei 14/2013 (GIFiM as FIU); data protection by forthcoming law.
-- **Cape Verde — BCV**: `CVE` pegged to EUR; bank payout via BCV-licensed bank partner (SISP/Vinti4 network reachable through the partner); payment-institution regime under BCV; AML Lei 120/VIII/2016; data protection Lei 133/V/2001 (CNPD).
-- **Guinea-Bissau — BCEAO (WAEMU)**: `XOF`; EMI framework Instruction 008-05-2015; payout through Orange Money / MTN GW or a bank; BCEAO reporting via the partner; XAF↔XOF is a cross-zone transfer settled through correspondent banks — hence a dedicated nostro and fixed-parity cross-currency treatment.
-- **São Tomé and Príncipe — BCSTP**: `STN` pegged to EUR; bank payout via partner bank; small volumes; reporting via partner.
-- **Consumer disclosure**: pre-contract display of rate, fee, receive amount, ETA and tracking ref (aligned with remittance transparency practice and SDG 10.c cost reporting), receipt downloadable.
-- **Record-keeping**: 10-year retention of transfer records, declarations and files (§5.6).
+- **CEMAC (BEAC / COBAC)** — Règlement n°02/18/CEMAC/UMAC/CM (foreign exchange regulation) and its BEAC application instructions: transfers out of the zone are FX operations that must be executed through an authorised intermediary (bank), carry a purpose and supporting documents above documentary thresholds, and are reported to BEAC; transfers within the zone in XAF are not FX operations but are still reported in e-money statistics. Règlement n°04/18/CEMAC/UMAC/COBAC (payment services) governs payment institutions, EMIs and their agents; BEAC requires intra-CEMAC e-money interoperability through GIMAC. Implications encoded: `requiredFields` includes purpose and source of funds for every corridor; `Setting intl.beac.declaration-threshold-xaf` drives per-transfer declaration lines; report `BEAC_FX_TRANSFER_DECLARATION` is produced for the sponsor bank to file; `BEAC_MONTHLY_TRANSFER_STATISTICS` covers all corridors including intra-CEMAC; annual per-person allowance tracking for undocumented transfers is a Phase 8 velocity rule using the USD counter.
+- **Angola (BNA)** — AOA is not freely convertible; inbound remittances are allowed through licensed payment service providers / remittance companies; BNA collects statistical returns from the licensed entity. BI-Rem is receive-only in AO and files through the partner (`BNA_INBOUND_REMITTANCE` layout agreed with the partner).
+- **Mozambique (Banco de Moçambique)** — e-money institutions licensed by BM; inbound remittances reported by the licensed EMI; identification of the beneficiary at payout (SIM registration) is the partner's responsibility; BI-Rem supplies sender data per transfer.
+- **Cape Verde (BCV)** — CVE pegged to EUR; inbound via BCV-licensed bank through the aggregator; bank account payouts require IBAN/BIC; reporting via the bank.
+- **Guinea-Bissau (BCEAO)** — WAEMU e-money instruction applies to Orange Money GW; inbound cross-border e-money transfers must pass through an authorised intermediary; XOF/XAF parity is 1:1 via EUR but the transfer is still an FX transfer between two monetary zones (declaration applies on the CEMAC side).
+- **São Tomé and Príncipe (BCSTP)** — STN pegged to EUR; inbound via partner bank; low volume, `SANDBOX` in this phase.
+- **Consumer protection / pricing transparency** — show total cost (fee + margin), the locked rate and the exact receive amount before confirmation; receipts keep this; wording reviewed by compliance in `fr`/`pt`.
+- **Data protection** — Cameroon Law n°2024/017 on personal data, Angola Law 22/11, Mozambique (no comprehensive law; constitutional and sector rules), Cape Verde Law 133/V/2001 as amended: snapshots are minimised, cross-border transfer of recipient data to the partner is a contractual necessity documented in the DPIA addendum.
 
 ### 8.4 Licensing / partner model per country
 
-| Country                       | Regulator           | BI-Rem role in Phase 6                                                                                             | Partner                                                                                 | Corridor direction                          | Status / blocking items                                     |
-| ----------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------- |
-| Cameroon (CM)                 | BEAC / COBAC, MINFI | Agent of a COBAC-licensed payment institution or sponsor bank while own payment-institution licence is in progress | Sponsor bank (FX declarations, nostro) + MTN MoMo / Orange Money for funding and payout | Send + receive                              | Sponsor bank agreement draft W1, signature target W4 (R6.1) |
-| Gabon (GA)                    | BEAC / COBAC        | Agent of partner EMI                                                                                               | Airtel Money GA (payout), sponsor bank for reporting                                    | Send + receive                              | Airtel GA production credentials (Phase 4 adapter exists)   |
-| Chad (TD)                     | BEAC / COBAC        | Agent of partner EMI                                                                                               | Airtel Money TD / Moov Money TD                                                         | Receive first, send W8                      | Moov TD UAT                                                 |
-| Congo-Brazzaville (CG)        | BEAC / COBAC        | Agent of partner EMI                                                                                               | MTN MoMo CG / Airtel Money CG                                                           | Receive first                               | MTN CG onboarding                                           |
-| Central African Republic (CF) | BEAC / COBAC        | Agent of partner EMI                                                                                               | Orange Money CF / Moov                                                                  | Receive only (`SANDBOX`)                    | Partner availability; low volumes                           |
-| Equatorial Guinea (GQ)        | BEAC / COBAC        | Agent of partner                                                                                                   | Bank partner / MTN GQ via aggregator                                                    | Receive only (`SANDBOX`)                    | Aggregator coverage                                         |
-| Angola (AO)                   | BNA                 | Agent of BNA-licensed EMI/bank                                                                                     | Unitel Money (Phase 4 `EXPERIMENTAL` adapter) or bank via aggregator                    | Receive only                                | Unitel partner UAT; BNA remittance reporting layout         |
-| Mozambique (MZ)               | Banco de Moçambique | Agent of licensed EMI                                                                                              | e-Mola (Phase 4 adapter), M-Pesa MZ via aggregator                                      | Receive only                                | e-Mola UAT; BM layout                                       |
-| Cape Verde (CV)               | BCV                 | Aggregator partner                                                                                                 | Aggregator → BCV-licensed bank                                                          | Receive only (`SANDBOX` → `FRIENDS_FAMILY`) | Aggregator contract                                         |
-| Guinea-Bissau (GW)            | BCEAO               | Agent of licensed EMI                                                                                              | Orange Money GW (Phase 4 Orange profile)                                                | Receive only                                | Orange GW profile credentials                               |
-| São Tomé and Príncipe (ST)    | BCSTP               | Aggregator partner                                                                                                 | Aggregator → partner bank                                                               | Receive only (`SANDBOX`)                    | Aggregator coverage confirmation                            |
+| Country                       | Regulator                       | BI-Rem role in Phase 6                                                                                                          | Partner(s)                                                                             | Corridor direction                              | Status / blocking items                                                     |
+| ----------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------- |
+| Cameroon (CM)                 | BEAC / COBAC, MINFI             | `SPONSOR_BANK` + `AGENT_OF_PAYMENT_INSTITUTION`: agent of a COBAC-licensed payment institution; sponsor bank is the FX intermediary and files BEAC declarations; own payment-institution application started in parallel | Sponsor bank (FX, XAF nostro, declarations); MTN MoMo CM, Orange Money CM for funding and payout | Send + receive                                   | Sponsor bank agreement draft W1, signature target W4 (R6.1)                 |
+| Gabon (GA)                    | BEAC / COBAC                    | `AGENT_OF_EMI`                                                                                                                  | Airtel Money GA (payout); sponsor bank for reporting                                   | Send + receive                                   | Airtel GA production credentials (Phase 4 adapter exists)                   |
+| Chad (TD)                     | BEAC / COBAC                    | `AGENT_OF_EMI`                                                                                                                  | Airtel Money TD, Moov Money TD                                                         | Receive first, send in W8                        | Moov TD UAT                                                                 |
+| Congo-Brazzaville (CG)        | BEAC / COBAC                    | `AGENT_OF_EMI`                                                                                                                  | MTN MoMo CG, Airtel Money CG                                                           | Receive first                                    | MTN CG onboarding                                                           |
+| Central African Republic (CF) | BEAC / COBAC                    | `AGENT_OF_EMI`                                                                                                                  | Orange Money CF, Moov Money CF                                                         | Receive only (`SANDBOX`)                         | Partner availability; low volumes                                           |
+| Equatorial Guinea (GQ)        | BEAC / COBAC                    | `AGGREGATOR_PARTNER`                                                                                                            | Aggregator → MTN GQ / partner bank                                                     | Receive only (`SANDBOX`)                         | Aggregator coverage                                                         |
+| Angola (AO)                   | BNA                             | `AGENT_OF_EMI` (BNA-licensed payment service provider)                                                                          | Unitel Money (Phase 4 adapter) or bank via aggregator                                  | Receive only                                     | Unitel partner UAT; BNA return layout                                       |
+| Mozambique (MZ)               | Banco de Moçambique             | `AGENT_OF_EMI`                                                                                                                  | e-Mola (Phase 4 adapter); M-Pesa MZ via aggregator                                     | Receive only                                     | e-Mola UAT; BM layout                                                       |
+| Cape Verde (CV)               | BCV                             | `AGGREGATOR_PARTNER`                                                                                                            | Aggregator → BCV-licensed bank                                                         | Receive only (`SANDBOX` → `FRIENDS_FAMILY`)      | Aggregator contract                                                         |
+| Guinea-Bissau (GW)            | BCEAO                           | `AGENT_OF_EMI`                                                                                                                  | Orange Money GW (Phase 4 Orange profile)                                               | Receive only                                     | Orange GW profile credentials                                               |
+| São Tomé and Príncipe (ST)    | BCSTP                           | `AGGREGATOR_PARTNER`                                                                                                            | Aggregator → partner bank                                                              | Receive only (`SANDBOX`)                         | Aggregator coverage confirmation                                            |
 
 ---
 
@@ -1357,53 +1550,58 @@ Restricted: identity and recipient snapshots, bank details, settlement/regulator
 
 ### 9.1 Test pyramid
 
-| Level       | Scope                                                                                                                                                                                                                                                                 | Tooling                                                                              | Target                                                                                                                                |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | Rate derivation and rounding (cross rates, exponent 0/2, scaled integers), markup math, lock-window logic, routing selection, limit intersection, saga step reducers, settlement CSV/`pain.001` renderers, statement parsers, matching algorithm, tracking token HMAC | Jest 30, property-based tests (`fast-check`) for money math                          | ≥ 90 % lines in `modules/intl/**`; zero float arithmetic (ESLint rule `no-restricted-syntax` on `parseFloat`/`Number` in money paths) |
-| Integration | Saga against Postgres + Redis + Phase 4 simulator; ledger balance invariants; reservation concurrency (50 parallel quotes on a thin nostro); backfill job; SFTP push/pull against `atmoz/sftp`; recon over seeded datasets                                            | Jest + Testcontainers (`postgres:17`, `redis:7`, `atmoz/sftp`), in-process simulator | Every saga transition and failure branch covered                                                                                      |
-| Contract    | Zod schemas for vendor rate payloads (recorded fixtures per vendor), aggregator API (Phase 4 conformance), partner statement layouts (golden files per partner), regulatory report layouts (golden files signed off by partner)                                       | Jest snapshot + schema tests; nightly `provider-contract.yml`                        | Drift detected within 24 h                                                                                                            |
-| E2E         | Customer send-international flow (all 3 locales), tracking, recipient link; admin corridor go-live wizard, FX freeze, pre-funding approval, break resolution, report generation                                                                                       | Playwright against staging with simulator                                            | Green on every `main` deploy                                                                                                          |
-| Performance | 200 quotes/s sustained 10 min p95 < 150 ms; 30 cross-border transfers/s sustained 15 min with p95 quote→FUNDED < 5 s and queue age < 30 s; recon of 100k items < 10 min; settlement generation 50k lines < 2 min                                                      | k6 (`perf.yml`), simulator with latency profiles                                     | Two consecutive nights                                                                                                                |
-| Security    | Pen-test (quote/lock abuse, tracking link, admin four-eyes bypass, file parser fuzzing), SAST/semgrep rules, gitleaks vendor patterns, dependency audit                                                                                                               | External firm W7 + `security.yml`                                                    | High/Critical closed before M6.8                                                                                                      |
-| Chaos       | Vendor outage 30 min, Redis flush, worker kill at each saga step, duplicate/out-of-order provider webhooks, partner statement with duplicate lines, SFTP down during delivery, Neon failover                                                                          | Toxiproxy + scripted game day W7                                                     | Zero unbalanced journals, zero orphan reservations, all transfers in a recoverable state                                              |
-| UAT         | Friends-and-family CM→GA, CM→TD; compliance analyst walks through declaration, report generation and break workflow; sponsor bank validates BEAC file on test data                                                                                                    | Production (flagged) and staging                                                     | Sign-offs §11                                                                                                                         |
+| Layer        | Scope                                                                                                                                                                                                                                                                                                                        | Tooling                                                                                           | Gate                                           |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Unit         | Rate math (`RATE_SCALE`, cross-rate derivation, rounding to exponent 0 and 2), markup application, quote signature, corridor state machine, routing selection, liquidity arithmetic, `CrossBorderSaga` transition table and compensation table, tracking ref/token generators, renderers (CSV, `pain.001`), parsers (`camt.053`, CSV layouts), report generators, Luxon cut-off/value-date logic | Jest 30, `fast-check` property tests (`sendAmount × rate` round-trips, parser fuzzing), golden files | ≥ 90 % lines on `modules/{corridors,fx,intl,nostro,settlement,regulatory}` |
+| Integration  | Quote → confirm → saga against Postgres + Redis with Phase 4 simulator; both journals and pair link; reservation lifecycle; held/release/refund; reroute; settlement batch close → files → SFTP (`sftp-sim`) → ingest → recon; backfill script; partition maintenance                                                       | Jest + Testcontainers (Postgres, Redis, atmoz/sftp, MinIO), Phase 4 simulator profiles             | All green                                      |
+| Contract     | OpenAPI diff (`oasdiff`) for `/intl/*`, `/corridors*`, `/fx/*`, `/nostro/*`, `/settlement/*`, `/regulatory-reports*`; event schema fixtures for every event in §6.2 (consumed by Phase 7/8/10/11 suites); `FxRateProvider` contract suite (run by Phase 7 against its engine); aggregator connector conformance (Phase 4 kit) | `oasdiff`, Zod fixtures, Phase 4 conformance runner                                               | No breaking change; conformance 100 % simulator |
+| E2E          | Customer: country → beneficiary → quote → purpose → MFA → confirm → tracking → receipt in `en/fr/pt`; recipient tracking page; expiry → requote; liquidity-low copy. Admin: corridor create → routes → status with four-eyes; manual rate maker-checker; freeze; pre-funding lifecycle; settlement redeliver; break resolution; report generate → review → submit | Playwright against staging with simulators; axe-core                                              | All journeys green; no serious a11y issues      |
+| Performance  | k6: quotes 200 rps p95 < 150 ms; confirmations 30/s p95 < 400 ms; saga throughput 30 transfers/s sustained 1 h with payout p95 < 60 s on simulator; recon of 100 000 lines < 10 min; report generation 1 M items < 15 min                                                                                                  | k6, Grafana                                                                                       | Two consecutive nights within budget           |
+| Chaos        | Vendor outage (stale → freeze), bad tick (deviation guard), worker kill between every saga step, duplicate `wallet.transaction.succeeded`, provider `UNKNOWN`, corridor `PAUSED` mid-flight, SFTP down during delivery, duplicate statement lines, Redis flush (rate cache cold), Postgres failover during FX posting        | Toxiproxy, Fly machine kill scripts, Phase 5 chaos harness                                         | Every transfer terminal or `HELD`; trial balance zero |
+| Security     | ZAP authenticated scan of `/v1/intl/*`, `/v1/track/*`, admin paths; semgrep rules `intl/no-snapshot-in-log`, `ledger/no-direct-prisma-write` (Phase 5), `intl/no-client-rate`; parser fuzzing corpus; external pen-test W7 (quote tampering, token forgery, four-eyes bypass, SFTP config, file upload)                   | ZAP, semgrep, external firm                                                                       | Zero High/Critical open                        |
+| UAT          | Business owner scripts: 15 journeys (treasury ops, finance ops, compliance, support, customer); partner file validation with sponsor bank and two payout partners; regulator layout review by compliance                                                                                                                      | Staging + friends-and-family production                                                           | 100 % scripts passed, partner acceptance e-mails |
 
 ### 9.2 Test cases mapped to success criteria
 
-| ID     | Test case                                                                                                                                                                                                           | Level                  | Criterion                        |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------- |
-| TC6.01 | Customer in CM with `LEVEL_1` KYC quotes XAF 100,000 to an Airtel GA wallet, confirms within lock, recipient leg succeeds in simulator, state `PAID_OUT`, both parties notified in `fr`                             | E2E                    | Send between supported countries |
-| TC6.02 | Same for CM→AO (Unitel), CM→MZ (e-Mola), CM→GW (Orange), CM→CV (aggregator bank), CM→ST (aggregator bank) using simulator profiles                                                                                  | E2E matrix             | Send between supported countries |
-| TC6.03 | Recipient with MTN CM sender → Moov TD recipient (cross-network) routes to Moov; when Moov circuit is open, routes to Airtel TD before submission; routing reason persisted                                         | Integration            | Cross-network                    |
-| TC6.04 | Quote shows rate, fee, receive amount; the paid-out `WalletTransaction.amount` equals `fx_quotes.recv_amount` for 10,000 random amounts across six currencies                                                       | Integration (property) | Rate applied automatically       |
-| TC6.05 | Cross rate XAF→AOA derived from EUR/XAF peg and EUR/AOA tick equals hand-computed value to 8 decimals; rounding is down to currency exponent                                                                        | Unit                   | Rate applied automatically       |
-| TC6.06 | Confirm 1 s after `lockedUntil` → 410 `QUOTE_EXPIRED` with a fresh quote; confirm 1 s before → accepted at the old rate even though the live mid moved 50 bps                                                       | Integration            | Rate locking                     |
-| TC6.07 | Mid moves 200 bps between quote and FX booking → transfer `HELD` (`FX_DRIFT`); operator release books at locked rate                                                                                                | Integration            | Rate locking / controls          |
-| TC6.08 | Vendor returns 503 for 6 min → pair frozen, new quotes `FX_STALE_RATE`, pegged pairs unaffected, existing locked quotes still confirmable                                                                           | Chaos                  | Kill switch                      |
-| TC6.09 | 50 concurrent quotes against a nostro with liquidity for 30 → exactly 30 reservations, 20 `CORRIDOR_LIQUIDITY_LOW`; expiry sweep releases unconfirmed ones                                                          | Integration            | Pre-funding                      |
-| TC6.10 | Payout leg `FAILED` → FX unwound at locked rate, sender refunded incl. fee, ledger balanced per currency, tracking shows `REFUNDED`                                                                                 | Integration            | Saga correctness                 |
-| TC6.11 | Worker killed after FX journal posted, before dispatch → on restart exactly one payout leg is created (idempotency)                                                                                                 | Chaos                  | Saga correctness                 |
-| TC6.12 | Transfer without `purposeCode` → 422; `BUSINESS_GOODS` with `LEVEL_1` → 422 with upgrade hint; snapshot fields immutable (PATCH ignored)                                                                            | Integration            | Regulatory fields                |
-| TC6.13 | Daily settlement batch for `nostro-aoa-unitel` closes at 15:00 Africa/Luanda; file control totals equal ledger movements for the value date; sha256 stored; redelivery produces a new version with the same content | Integration            | Settlement                       |
-| TC6.14 | Recon over 1,000 legs with 20 injected discrepancies (5 per type: missing at partner, amount mismatch, duplicate, status mismatch) → 20 breaks of the right type, 980 matched                                       | Integration            | Reconciliation                   |
-| TC6.15 | Break resolution `WRITE_OFF` for USD 600 eq. requires second approver; posts adjustment journal; audit rows for both actors                                                                                         | E2E                    | Controls                         |
-| TC6.16 | Recipient tracking link: valid token shows masked data; tampered token → 404; after 30 days → 410; 31st request/min from one IP → 429                                                                               | Security               | Tracking                         |
-| TC6.17 | BEAC FX declaration for June generated; golden-file match with sponsor-bank layout; totals equal sum of `CROSS_BORDER` transfers out of CEMAC                                                                       | Contract               | Reporting                        |
-| TC6.18 | Domestic Phase 5 transfer suite runs unchanged on the expanded schema; backfill sets `corridor_id` on 100 % of rows                                                                                                 | Regression             | Deployable alone                 |
-| TC6.19 | `intl.enabled=false` → quote/transfer endpoints 503 within 30 s; in-flight `PAYOUT_PENDING` transfers still complete                                                                                                | Integration            | Kill switch                      |
-| TC6.20 | Friends-and-family user not in `rules` → corridor invisible in `/corridors/public`; in list → visible with cap `XAF 50,000`                                                                                         | Integration            | Rollout                          |
+| ID     | Test case                                                                                                                                                                                     | Layer         | Success criterion                 |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------- |
+| TC6.01 | `CM→GA` XAF→XAF: quote shows rate 1.0, fee, receive amount; confirm; recipient Airtel GA simulator credited exactly `recvAmount`; timeline reaches `PAYOUT_CONFIRMED`                       | E2E           | Send between countries            |
+| TC6.02 | `CM→AO` XAF→AOA: quote applies market mid × (1 − markup); receive amount = floor to AOA exponent; receipt and `transfer_cross_border_details` carry identical `customerRateNum`              | Integration   | Rate applied automatically        |
+| TC6.03 | Quote expired by 1 s outside grace → 409 `QUOTE_EXPIRED`, `nextAction=REQUOTE`, no journal, reservation released                                                                              | Integration   | Rate applied automatically        |
+| TC6.04 | Quote expired within grace, rate drifted 10 bps against BI-Rem → honoured; 40 bps → `REQUOTE`                                                                                                 | Unit + Integ. | Rate applied automatically        |
+| TC6.05 | Tampered `quoteId` signature or amount in confirm body → 400, audit row with outcome `DENIED`                                                                                                 | Security      | Rate applied automatically        |
+| TC6.06 | Vendor tick older than `maxAgeSeconds` → `FX_RATE_STALE`; pegged `CM→GW` still quotes                                                                                                         | Integration   | Rate applied automatically        |
+| TC6.07 | Tick deviating 400 bps → rejected, alert, previous tick kept                                                                                                                                  | Unit          | Rate applied automatically        |
+| TC6.08 | `intl.fx.freeze=true` → new quote `FX_FROZEN`; existing active quote still confirmable                                                                                                        | Integration   | Rate applied automatically        |
+| TC6.09 | Property: for 10 000 random (amount, rate, markup) tuples both journals balance and `FX_POSITION` entries equal principal and receive amount                                                  | Unit          | Both                              |
+| TC6.10 | Worker killed after each of the 7 saga steps × 3 → all transfers `PAID_OUT` or `REFUNDED`; per-currency trial balance zero                                                                   | Chaos         | Send between countries            |
+| TC6.11 | Payout provider `FAILED` after FX → compensation journals, sender refunded principal + fee, state `REFUNDED`, notifications sent                                                              | Integration   | Send between countries            |
+| TC6.12 | Provider `UNKNOWN` → `HELD` (`PARTNER_UNKNOWN_OUTCOME`); Phase 4 resolution `succeeded` → `PAID_OUT`; no second leg                                                                           | Integration   | Send between countries            |
+| TC6.13 | Primary route circuit open → fallback route used, `REROUTED` event, single leg in flight                                                                                                      | Integration   | Send between countries            |
+| TC6.14 | Nostro available below amount → `CORRIDOR_LIQUIDITY_LOW`; pre-funding `RECEIVED` → quote succeeds                                                                                             | Integration   | Send between countries            |
+| TC6.15 | Corridor `PAUSED` while transfer `FX_LOCKED` → `HELD` (`CORRIDOR_PAUSED`); resume → payout proceeds                                                                                            | Chaos         | Send between countries            |
+| TC6.16 | Missing `purposeCode` → 422; purpose not allowed for corridor → 422; declaration false → 422                                                                                                   | Integration   | Compliance                        |
+| TC6.17 | `compliance_rules` `AMOUNT_ABOVE` fires → `HELD` (`MANUAL_REVIEW_RULE`); operator release with evidence → payout; refund path                                                                 | E2E           | Compliance                        |
+| TC6.18 | Settlement batch at cut-off: files generated, SHA-256 stored, delivered to `sftp-sim`, redeliver creates version 2; inbound statement ingested and 100 % matched                              | Integration   | Both                              |
+| TC6.19 | Injected anomalies (missing line, amount off by 1, duplicate line, fee mismatch, wrong rate) → correct break kinds                                                                            | Integration   | Both                              |
+| TC6.20 | BEAC declaration and monthly statistics generated for a seeded month → golden file equal; every item traces to a transfer                                                                      | Unit + Integ. | Compliance                        |
+| TC6.21 | Recipient tracking: valid token → masked data; expired/forged token → 404; 31st request/min → 429                                                                                              | Security      | Send between countries            |
+| TC6.22 | Customer journey in `fr` and `pt` incl. requote and receipt; axe-core clean                                                                                                                   | E2E           | Send between countries            |
+| TC6.23 | k6: 200 rps quotes p95 < 150 ms with Redis warm; cold cache after flush recovers within one poll                                                                                              | Performance   | Rate applied automatically        |
+| TC6.24 | Phase 5 regression suite on expanded schema with Phase 6 flags off: identical results                                                                                                          | Integration   | Deployable alone                  |
+| TC6.25 | `FxRateProvider` contract suite against `EngineFxRateProvider` (Phase 7, staging) → green; `fx.corridor.cm-ao.enabled` toggles provider without restart                                        | Contract      | Rate applied automatically        |
 
 ### 9.3 Provider sandbox / simulator approach
 
-The Phase 4 simulator gains profiles `aggregator-payout` (bank payout with T+0/T+1 scenario accounts, duplicate webhook scenario) and `fx-vendor` (scripted rate paths: flat, step +2 %, random walk, outage, malformed payload) and an `sftp` container (`atmoz/sftp`) with partner folder layouts and golden statement files, including deliberately broken ones. Live vendor sandbox and aggregator sandbox are hit nightly by `provider-contract.yml`; partner UAT SFTP used in W5–W7 for statement ingestion.
+Phase 4 simulator profiles are extended with Airtel GA/TD/CG, Moov TD, MTN CG, Orange GW, Unitel AO and e-Mola MZ behaviours (latency, `UNKNOWN` rate, limit codes). New simulators in `infra/docker/docker-compose.yml` profile `simulators`: `fx-vendor-sim` (deterministic ticks from a fixture with scripted outages and spikes), `sftp-sim` (atmoz/sftp with partner folder layouts and scripted late files), `aggregator-sim` (payout API + webhook with configurable settlement delay). Vendor sandboxes (FX vendor dev tier, aggregator sandbox, Unitel/e-Mola UAT) are used in the nightly `intl-sandbox-e2e.yml` only; CI uses simulators.
 
 ### 9.4 Test data strategy
 
-Seed script `packages/db/prisma/seed-data/intl.ts`: 11 launch corridors + domestic corridors, routes, nostros with opening balances (XAF 50 M eq.), pegged sources, purpose codes, 30 synthetic customers across CM/GA/TD with `LEVEL_1`/`LEVEL_2`, beneficiaries on every rail, 2,000 historical cross-border transfers across all states for recon/report tests, partner statements matching them with injected breaks. Scenario amounts drive simulator outcomes (amount ending `…13` → provider timeout, `…77` → failed payout, `…99` → `UNKNOWN`). No production data in lower environments; staging reset weekly (`staging-reset.yml`).
+Seeded corridors (eleven cross-border, Phase 5 domestic), regulatory codes, three nostros with opening balances via seed journals, 90 days of synthetic `fx_rates` (fixture committed), synthetic customers in CM/GA/TD with `LEVEL_1`/`LEVEL_2` KYC and beneficiaries per rail, k6 profile extended with cross-border transfers at 30/s, anomaly injector for statements (`scripts/inject-statement-anomalies.ts`), golden files per partner layout under `apps/api/test/fixtures/settlement/<partner>/` and `.../regulatory/<regulator>/`. No production PII is ever copied to staging; partner UAT files are scrubbed before being committed as fixtures.
 
 ### 9.5 Exit criteria
 
-Unit ≥ 90 % on `modules/intl/**`; TC6.01–TC6.20 green; perf thresholds two nights; chaos game day report with zero inconsistent states; pen-test High/Critical closed; ≥ 50 real production transfers across ≥ 2 corridors; 5 consecutive production recon days with zero unexplained breaks; compliance and sponsor bank sign-off on the BEAC file.
+All TC6.* green on staging; k6 two-night rule; chaos suite green; zero High/Critical security findings; UAT 100 %; friends-and-family `CM→GA` ≥ 50 real transfers with 100 % ledger/leg/statement agreement; wave A canary metrics (§12) met for 5 business days; `FxRateProvider` contract suite accepted by Phase 7; §11 sign-offs.
 
 ---
 
@@ -1411,166 +1609,157 @@ Unit ≥ 90 % on `modules/intl/**`; TC6.01–TC6.20 green; perf thresholds two n
 
 ```mermaid
 flowchart LR
-  PR[Pull request] --> LINT[lint, typecheck, unit incl. money property tests]
-  LINT --> MIG[migration lint: expand-only, partition check]
-  LINT --> INT[integration: saga, ledger invariants, recon, sftp testcontainers]
-  LINT --> CONF[connector conformance matrix incl. aggregator-payout]
-  LINT --> SEC[security: gitleaks fx vendor rules, semgrep intl rules, trivy]
-  MIG --> BUILD[build images api, admin, web, simulator]
-  INT --> BUILD
-  CONF --> BUILD
-  SEC --> BUILD
-  BUILD --> PREV[Neon preview branch + Vercel previews]
-  PREV --> MERGE[merge to main]
-  MERGE --> STG[deploy staging: migrate, api, worker, simulator profiles, seed intl]
-  STG --> E2E[Playwright e2e + k6 smoke + recon golden run]
-  E2E --> TAG[tag v0.6.x]
-  TAG --> GATE{production environment approval PM, core lead, security, compliance}
-  GATE --> SNAP[Neon snapshot]
-  SNAP --> DEPLOYM[migrate deploy expand]
-  DEPLOYM --> CAN[worker canary 1 machine, http canary 1 machine]
-  CAN --> SMOKE[smoke: health fx-rates up, shadow quote, settlement dry run]
-  SMOKE --> FULL[full rollout]
-  FULL --> FLAGS[flag rollout: corridor enabled, friends family, 5 pct, 25 pct]
-  SMOKE -->|fail| RB[auto rollback images, flags untouched]
+  PR["Pull request<br/>feat intl"] --> LINT["lint + typecheck<br/>ci.yml"]
+  LINT --> UNIT["unit + property tests<br/>fast-check, golden files"]
+  UNIT --> MIG["migration check<br/>expand-only lint<br/>up-down-up on Phase 5 snapshot<br/>Phase 5 regression on v6 schema"]
+  MIG --> INTEG["integration<br/>Testcontainers pg, redis, sftp-sim, minio<br/>Phase 4 simulator"]
+  INTEG --> CONTRACT["contract<br/>oasdiff, event fixtures,<br/>FxRateProvider suite,<br/>aggregator conformance"]
+  CONTRACT --> SEC["security<br/>semgrep intl rules, ZAP baseline,<br/>parser fuzz 2 min, SBOM"]
+  SEC --> BUILD["build images<br/>api, web, admin"]
+  BUILD --> CIOK["ci-ok gate"]
+  CIOK --> MERGE["merge to main"]
+  MERGE --> DBMIG["db-migrate.yml<br/>staging branch apply"]
+  DBMIG --> STG["deploy-api.yml staging<br/>Fly worker + http"]
+  STG --> E2E["Playwright e2e en fr pt<br/>axe-core"]
+  E2E --> SANDBOX["intl-sandbox-e2e.yml nightly<br/>vendor + partner sandboxes"]
+  E2E --> K6["k6 nightly<br/>quotes, confirms, saga"]
+  SANDBOX --> PROD["deploy-api.yml production<br/>drain gate, flags off"]
+  K6 --> PROD
+  PROD --> SMOKE["smoke-test.sh<br/>+ intl shadow quote probe"]
+  SMOKE --> FLAGS["flag rollout ladder<br/>flag-guardrails.yml"]
+  FLAGS --> REG["regulatory-reports.yml<br/>monthly dry run and validation"]
 ```
 
 ### 10.1 Workflow changes (`.github/workflows`)
 
-| Workflow                       | Trigger                                                               | Phase 6 changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ci.yml`                       | PR, push `main`                                                       | New jobs `intl-unit` (money property tests, fails on any float in money paths), `migration-lint` (asserts expand-only: no `DROP`, no `SET NOT NULL` outside `*_contract` files, partitions for next 3 months), conformance matrix adds `aggregator-payout`                                                                                                                                                                                                                                 |
-| `integration.yml`              | PR touching `apps/api/**`, `packages/db/**`, `packages/connectors/**` | Adds `atmoz/sftp` service and `fx-vendor` simulator profile; runs `test:integration:intl`, `test:chaos:intl` (worker kill at each saga step), recon golden datasets                                                                                                                                                                                                                                                                                                                        |
-| `provider-contract.yml`        | nightly 02:30 UTC, manual                                             | Adds FX vendor sandbox schema test, aggregator sandbox conformance, partner UAT SFTP statement parse                                                                                                                                                                                                                                                                                                                                                                                       |
-| `security.yml`                 | PR, nightly                                                           | gitleaks patterns for the chosen FX vendor key format and SSH private keys, semgrep `intl/no-snapshot-log`, `intl/no-float-money`; trivy on simulator image                                                                                                                                                                                                                                                                                                                                |
-| `perf.yml`                     | nightly, manual                                                       | k6 scenarios §9.1 (quotes, transfers, recon) with two-night rule                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `deploy-staging.yml`           | push `main`                                                           | Seeds intl data, loads simulator profiles, registers staging SFTP, runs recon golden run as post-deploy check                                                                                                                                                                                                                                                                                                                                                                              |
-| `deploy-prod.yml`              | tag `v0.6.*`                                                          | Environment `production` requires PM + core lead + security + **compliance** reviewer; steps: Neon snapshot → `prisma migrate deploy` → worker canary (1 machine) → http canary → smoke (`/health/ready` `fx-rates` up, shadow quote succeeds, settlement dry-run writes to bucket) → full rollout → post-deploy check that no transfer is stuck in `FX_BOOKED` > 10 min; **pre-deploy gate**: refuses to deploy if any production transfer is in `FX_BOOKED` or `REFUNDING` (drain first) |
-| `data-jobs.yml`                | nightly 01:00 UTC                                                     | Partition maintenance for `fx_rates`, `transfer_tracking_events`; quote purge; `raw_line` nulling; recon scheduled runs 03:00; settlement cut-off scheduler (per corridor timezone) moves to the worker cron, this job only verifies yesterday's batches closed                                                                                                                                                                                                                            |
-| `regulatory-reports.yml`       | monthly 1st 05:00 UTC, manual                                         | Generates monthly reports for the previous period, posts summary to the compliance channel, fails if any `LIVE` corridor has transfers not attributed to a report                                                                                                                                                                                                                                                                                                                          |
-| `connector-scaffold-check.yml` | weekly                                                                | unchanged, now also verifies `aggregator-payout` scaffolding template                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Workflow                         | Change                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                         | `test` job gains Testcontainers services (`atmoz/sftp`, `minio/minio`) and the `simulators` profile; new `contract` job (oasdiff against `main` OpenAPI snapshot, event fixtures, `FxRateProvider` suite, aggregator conformance); `prisma` job runs the Phase 5 regression suite against the v6 schema and the expand-only lint (`scripts/check-migration-expand-only.ts`); `ci-ok` needs `contract`         |
+| `security.yml`                   | semgrep rules `intl/*` added; parser fuzz step (2 min budget) on `settlement/parsers/**`; ZAP baseline includes `/v1/intl/*` and `/v1/track/*`; dependency review for `ssh2`, `fast-xml-parser`, `luxon`                                                                                                                                                                                      |
+| `db-migrate.yml`                 | Pre-step: Neon branch from production snapshot, `up → down → up`, Phase 5 regression; post-step: `CREATE INDEX CONCURRENTLY` script and partition creation; backfill job dispatch input `run_backfill=true`                                                                                                                                                                                 |
+| `deploy-api.yml`                 | Production job gains the **drain gate**: query `transfer_cross_border_details` for `FX_LOCKED`/`PAYOUT_PENDING` on corridors affected by the release (label `intl-breaking`) and wait or require `override=true`; `WORKER_QUEUES` includes `intl:*`; smoke test adds a shadow quote probe (`POST /v1/intl/quotes` with `X-Shadow: 1` as the synthetic tenant)                                   |
+| `flag-guardrails.yml` (Phase 5)  | Guardrail metrics extended: `intl_transfer_success_ratio`, `intl_payout_p95_seconds`, `intl_held_over_sla_total`, `fx_rate_age_seconds`, `intl_recon_match_ratio`; auto-rollback sets `intl.corridor.<pair>.live.rolloutPercentage` to the previous step and pages                                                                                                                              |
+| `recon.yml` (Phase 5)            | Nightly job extended with nostro runs per value date and partition maintenance (`fx_rates`, `transfer_tracking_events` next-month partitions)                                                                                                                                                                                                                                              |
+| `intl-sandbox-e2e.yml` (new)     | Nightly against staging with vendor and partner sandboxes: quote/confirm per corridor in `SANDBOX`+, settlement round-trip with `sftp-sim`, aggregator sandbox payout; results posted to the `#intl-ops` channel                                                                                                                                                                              |
+| `regulatory-reports.yml` (new)   | Monthly (1st, 05:00 UTC) dry-run generation of every report type for the previous month on staging data; layout validation against golden schemas; opens an issue on failure; in production the same workflow runs with `dry_run=false` only when `intl.reports.auto-generate=true`                                                                                                             |
+| `release.yml`                    | Changelog section "International" generated from `feat(intl)`, `feat(corridors)`, `feat(fx)` commits                                                                                                                                                                                                                                                                                      |
+
+Environments: `staging` (auto on merge), `production` (manual approval by Phase 6 lead + DevOps; drain gate). Secrets added per environment: `INTL_QUOTE_SIGNING_KEY`, `INTL_TRACKING_TOKEN_KEY`, `SETTLEMENT_BUCKET_*`; vendor, SFTP and aggregator credentials are Phase 3 vault rows, not GitHub secrets.
 
 ### 10.2 Rollout strategy
 
-1. **W4 dark deploy** (`v0.6.0`): all flags off except `intl.fx.quote-engine=shadow`; FX ingestion live; 48 h of shadow quotes reviewed.
-2. **W5**: `intl.settlement.auto-generate=true`, `auto-deliver=false` (bucket only); recon against partner UAT statements.
-3. **W6 friends-and-family** (`v0.6.2`): `intl.enabled=true`, `intl.corridor.cm-ga.enabled=true`, `.live=true` with `rules: userIds in [20 named]`, corridor `singleTxnMaxMinor` temporarily `XAF 50,000`; `portal.send-international` same rules.
-4. **W7 canary**: `cm-ga`, `cm-td` `rolloutPercentage=5` (stable hash of user id), monitored on error rate, p95, `HELD` count, recon breaks; `intl.settlement.auto-deliver=true` for sponsor bank.
-5. **W8**: wave A to 25 %; wave B corridors `FRIENDS_FAMILY` where partner-ready; 100 % and remaining corridors are decided per corridor by the operations review in Phase 7/8 weeks with the same flag mechanics (no deploy needed).
+1. **Dark** (W4, 2027-06-25): production deploy with `intl.enabled=false`; FX ingestion on; shadow quotes from the synthetic tenant.
+2. **Sandbox** (W5): corridors `SANDBOX`; `intl.enabled=true` with `intl.corridor.*.live=false`; settlement files to staging bucket; recon on partner UAT statements.
+3. **Friends and family** (W6, 2027-07-09): `cm-ga` → `FRIENDS_FAMILY`; `intl.corridor.cm-ga.live` `rules: userIds in [20 staff]`, cap `XAF 50,000`; daily review of every transfer.
+4. **Canary** (W7, 2027-07-16): `cm-ga`, `cm-td` → `LIVE` with `rolloutPercentage` 5 % (Mon) → 25 % (Wed); guardrails active; forced rollback drill on Tuesday.
+5. **Wave A** (W8, 2027-07-23): `cm-ga`, `cm-td`, `cm-cg`, `ga-cm` at 25 %; 100 % handed to Phase 12's ladder; wave B corridors `FRIENDS_FAMILY`/`SANDBOX` per partner readiness.
+6. **Phase 7 engine switch** (from 2027-08-06, Phase 7 M7.6): `fx.corridor.<pair>.enabled` per corridor, Phase 6 table remains the fallback.
+
+A user outside the canary bucket sees no "Send to another country" card; a user inside sees it only for corridors whose flag and status allow it.
 
 ### 10.3 Rollback procedure
 
-| Situation                         | Action                                                                                                                                           | Time     |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
-| Bad quotes / wrong rates          | `intl.fx.freeze=true` (API) → investigate; frozen quotes cannot be created; no deploy                                                            | < 1 min  |
-| Corridor-specific payout failures | corridor `PAUSED` or `intl.corridor.<k>.live=false`; in-flight park in `HELD`, refunds by operator                                               | < 1 min  |
-| Saga bug affecting money          | `intl.enabled=false`, drain `PAYOUT_PENDING`, roll back worker + api images via `deploy-prod.yml` rollback job (previous tag), keep schema       | ≤ 30 min |
-| Migration failure                 | Expand migration is transactional per file; on failure the deploy stops before images; Neon snapshot restore if partially applied (RTO ≤ 60 min) | ≤ 60 min |
-| Settlement file wrong             | Mark batch `FAILED`, regenerate (new version), redeliver with partner notification; never edit a delivered file                                  | ≤ 1 h    |
-| Contract migration (Phase 9)      | `DROP NOT NULL` + snapshot                                                                                                                       | ≤ 60 min |
+| Situation                                        | Action                                                                                                                                                                                                                                                                      | Time        |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Elevated failures on one corridor                | `intl.corridor.<pair>.live.rolloutPercentage` → previous step or corridor `PAUSED` (in-flight park `HELD`); investigate; resume                                                                                                                                             | < 1 min     |
+| Wrong rates                                      | `POST /v1/fx/freeze`; identify quotes by `fx_rate_id`; `CORRECTION` journals under four-eyes; unfreeze with manual rate if vendor still bad                                                                                                                                 | < 1 min     |
+| Liquidity shortfall                              | Corridor auto-`PAUSED` by guard; pre-funding runbook; resume                                                                                                                                                                                                                | minutes     |
+| Saga / ledger defect                             | `intl.enabled=false` (new intake stops, in-flight continue), drain gate, `infra/scripts/rollback-api.sh <digest>`; held transfers resolved by operators; schema stays (expand-only)                                                                                         | 5–10 min    |
+| Settlement file defect                           | `intl.settlement.auto-deliver=false`; regenerate as new version after fix; notify partner; never mutate delivered files                                                                                                                                                      | minutes     |
+| Portal defect                                    | Vercel instant rollback; API unaffected                                                                                                                                                                                                                                     | < 2 min     |
+| Migration problem before W6                      | Neon PITR / `down.sql` rehearsed; after W6 forward-fix only                                                                                                                                                                                                                 | 15–30 min   |
 
 ---
 
 ## 11. Production Readiness Checklist
 
 **Observability**
-
-- [ ] Grafana dashboards _International_ (quotes/min, conversion funnel, saga states, payout p95 per corridor, `HELD` by reason/age, FX age and drift per pair, liquidity vs reserve per nostro, settlement and recon status) and _FX Sources_ live in production.
-- [ ] Alerts wired to on-call: FX age > 300 s for any served pair; `HELD` > 5 or oldest `HELD` > 2 h; `PAYOUT_PENDING` oldest > corridor SLA × 2; nostro available < reserve; settlement batch not closed 1 h after cut-off; delivery failed; recon match rate < 99 % or open breaks > 20; saga DLQ depth > 10; quote error rate > 2 % / 5 min.
-- [ ] pino redaction verified for identity snapshots, recipient names, bank details, SFTP keys, vendor keys; log sample reviewed.
-- [ ] Correlation id propagates quote → transfer → saga jobs → Phase 4 legs → ledger journals → tracking events.
-- [ ] Sentry release `v0.6.x`; saga errors grouped by step and `holdReason`.
+- [ ] Grafana dashboards `intl-overview`, `intl-fx`, `intl-nostro`, `intl-settlement-recon` published and linked from runbooks.
+- [ ] Metrics exported: `intl_quotes_total{corridor,outcome}`, `intl_transfers_total{corridor,state}`, `intl_payout_duration_seconds` histogram, `intl_held_total{reason}`, `fx_rate_age_seconds{pair,source}`, `fx_freeze_active`, `nostro_available_minor{key}`, `intl_settlement_delivery_total{partner,outcome}`, `intl_recon_match_ratio{nostro}`.
+- [ ] Alerts: rate stale, freeze > 30 min, liquidity low, held over SLA, SFTP delivery failed, recon match < 99 %, quote error rate > 1 %, saga DLQ depth > 0.
+- [ ] OTEL traces span quote → confirm → saga steps → leg with `trackingRef` attribute; pino redaction verified by test.
+- [ ] Sentry release tagging for `apps/api` intl modules and both portals.
 
 **Reliability**
-
-- [ ] Chaos game-day report (vendor outage, Redis flush, worker kill per step, duplicate webhooks, duplicate statement lines, SFTP down, Neon failover) with zero inconsistent ledgers/reservations.
-- [ ] k6 thresholds met two consecutive nights.
-- [ ] Worker group ≥ 3 machines across two Fly regions; `WORKER_QUEUES` includes `intl:*`; `/health/ready` `fx-rates` indicator degraded-tolerant.
-- [ ] Expiry sweep, settlement scheduler and recon schedule verified in production time zones.
-- [ ] Runbooks `docs/handbooks/intl-operations.md` reviewed with on-call.
+- [ ] k6 two-night rule met; chaos suite green; worker autoscaling threshold for `intl:saga` set.
+- [ ] Drain gate wired in `deploy-api.yml`; DLQ replay runbook tested.
+- [ ] Reservation and quote expiry sweepers running; partition maintenance scheduled; backfill completed and verified.
+- [ ] Vendor outage and SFTP outage game-day executed (M6.7).
 
 **Security**
-
-- [ ] Pen-test High/Critical closed; report filed.
-- [ ] Four-eyes enforced and tested for corridor go-live, pre-funding approval, manual rates, break write-offs, `HELD` release/refund above threshold.
-- [ ] Vendor and SFTP credentials in the Phase 3 credential store with rotation policies; host keys pinned; static egress IPs allow-listed by every partner.
-- [ ] Tracking token HMAC key in secrets manager with rotation plan (dual-key verification window).
-- [ ] Semgrep/gitleaks intl rules in `security.yml`; threat model T6.1–T6.11 reviewed.
+- [ ] External pen-test closed (zero High/Critical); semgrep `intl/*` rules in CI.
+- [ ] `INTL_QUOTE_SIGNING_KEY`, `INTL_TRACKING_TOKEN_KEY` generated per environment with rotation procedure; SFTP keys per partner in the vault with host-key pins.
+- [ ] Four-eyes verified for corridor activation, manual rate, pre-funding approval, refund above threshold, break resolution above threshold.
+- [ ] Bucket Object Lock and write-once IAM policy verified by attempting an overwrite (must fail).
 
 **Data**
-
-- [ ] Expand migration applied; backfill 100 %; contract scheduled for Phase 9 W1 with snapshot step in the deploy plan.
-- [ ] Ledger accounts for all six currencies and FX position pairs created; invariant check job (per-currency sum = 0) green daily.
-- [ ] Partitions created through 2027-10; retention jobs scheduled; bucket Object Lock verified on a test object.
-- [ ] Nostro opening balances reconciled to partner statements on day 0.
+- [ ] Expand migration applied; `transfers.corridor_id` NULL count zero; Phase 9 contract ticket created.
+- [ ] Retention jobs and partition detachment configured; DPIA addendum signed.
+- [ ] Backup/restore drill includes new tables and the settlement bucket.
 
 **Compliance**
-
-- [ ] §8.4 matrix: sponsor bank agreement signed (CM), partner agreements for every `FRIENDS_FAMILY`/`LIVE` corridor uploaded as `licenceEvidenceDocumentId`.
-- [ ] Purpose/source-of-funds lists and declaration texts approved by compliance in `en/fr/pt`.
-- [ ] BEAC FX declaration layout validated by sponsor bank on test data; BNA/BM layouts validated or corridors kept at `SANDBOX`.
-- [ ] DPIA addendum for cross-border data flows (identity snapshots shared with partners) approved.
-- [ ] Phase 8 read access to `transfer_cross_border_details` and events confirmed; manual review rules configured per corridor.
+- [ ] Licensing matrix (§8.4) reviewed by counsel; licence evidence attached to every `FRIENDS_FAMILY`/`LIVE` corridor.
+- [ ] BEAC declaration and statistics layouts confirmed with the sponsor bank; first monthly file produced and reviewed.
+- [ ] Purpose/source/relationship catalogue approved by compliance in `en/fr/pt`; declaration and disclosure wording approved.
+- [ ] Consumer pricing disclosure (rate, margin, fee, receive amount) verified on web and receipts.
+- [ ] Phase 8 handover: `intl.transfer.*` fixtures, `HELD` operations, report store documented.
 
 **Operations**
-
-- [ ] Treasury ops trained: liquidity top-up, FX freeze, pre-funding approval, break resolution, settlement redelivery.
-- [ ] Support trained: tracking lookup by `trackingRef`, `HELD` explanation scripts, refund timelines, recipient link resend.
-- [ ] Partner escalation contacts and SLAs recorded in `Provider.supportContacts`.
-- [ ] Daily ops checklist (batches closed, files acknowledged, recon run, breaks triaged) scheduled.
+- [ ] Runbooks (§15.4) published under `docs/runbooks/intl-*.md` and rehearsed.
+- [ ] Treasury ops and finance ops trained (pre-funding, liquidity, settlement, recon); support trained on tracking lookups and hold scripts.
+- [ ] Partner escalation matrix (sponsor bank, payout partners, aggregator, vendor) with 24/7 contacts.
+- [ ] On-call rota includes `intl` alerts; PagerDuty service created.
 
 **Documentation**
-
-- [ ] ADR-0018/0019/0020 accepted; OpenAPI `/docs` includes all `/v1/intl/*`, `/v1/corridors`, `/v1/track/*` with examples; Phase 11 reviewed.
-- [ ] `docs/handbooks/regulatory-reports.md`, `partner-onboarding.md`, `intl-operations.md`, corridor configuration guide published.
-- [ ] Customer help-centre articles (rates, fees, tracking, delays, refunds) in `en/fr/pt`.
+- [ ] OpenAPI `/docs` complete for all Phase 6 endpoints with examples; Phase 7, 8, 10, 11 teams reviewed.
+- [ ] ADR-0018/0019/0020 merged; `docs/handbooks/licensing-matrix.md`, `docs/handbooks/mobile-intl.md`, settlement file specifications per partner.
+- [ ] `.env.example` documents every new variable; `infra/docker/docker-compose.yml` simulators documented.
 
 **Sign-offs**
-
-- [ ] Program Manager — milestones and rollout plan.
-- [ ] Solution Architect — design, ledger model, Phase 7 boundary.
-- [ ] Core backend lead — saga, FX, settlement, recon.
-- [ ] Frontend lead — portals, accessibility.
-- [ ] QA lead — exit criteria §9.5.
-- [ ] Security engineer — pen-test closure, controls.
-- [ ] Compliance analyst — licensing matrix, reporting, declarations.
-- [ ] DevOps/SRE — infra delta, alerts, runbooks.
-- [ ] Phase 7 lead — FX/nostro handover accepted; Phase 8 lead — data and events accepted; Phase 11 lead — API contract accepted.
+- [ ] Solution Architect — design and ADRs.
+- [ ] Backend lead / QA lead — test exit criteria.
+- [ ] Head of Compliance — regulatory fields, reports, licensing matrix.
+- [ ] Treasury ops lead — nostro, pre-funding, liquidity procedures.
+- [ ] Finance ops lead — settlement and reconciliation procedures.
+- [ ] Security engineer — pen-test closure.
+- [ ] DevOps / SRE — infrastructure, alerts, rollback.
+- [ ] Program Manager — milestones, partner readiness, go/no-go record.
+- [ ] Phase 7 Lead — `FxRateProvider` contract accepted; Phase 8 Lead — handover accepted.
 
 ---
 
 ## 12. Success Criteria Verification
 
-| Criterion                                           | How demonstrated                                                                                                                                                                                                                                  | Evidence artifact                                                                                                                                                                                                                    |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **User can send money between supported countries** | W6: friends-and-family transfer CM→GA in production credited to a real Airtel Money GA wallet; W8: ≥ 50 production transfers across ≥ 2 corridors (`cm-ga`, `cm-td`), plus staging E2E matrix TC6.01/TC6.02 covering all 11 receive countries     | Recorded demo (W6), production query export `transfers WHERE kind='CROSS_BORDER' AND state='PAID_OUT'` with tracking refs and provider transaction ids, Playwright report for TC6.01–TC6.03, recon reports for the 5 clean days      |
-| **Exchange rate applied automatically**             | Quote shows rate/fee/receive amount without operator action; paid-out amount equals quoted receive amount (TC6.04/05); locked rate honoured (TC6.06); drift and stale guards (TC6.07/08); shadow quote log in production for 48 h before exposure | Property-test report, Loki query of shadow quotes with age/drift histograms, Grafana _FX Sources_ snapshot, sample receipts (PDF) showing rate and reference, ledger journal export for 10 transfers with per-currency balance proof |
-| Corridor configuration drives behaviour             | Pausing `cm-td` in admin stops quotes within 30 s; route fallback on provider circuit (TC6.03)                                                                                                                                                    | Playwright trace, audit log rows, routing reasons on transfers                                                                                                                                                                       |
-| Pre-funding / nostro protects payouts               | Liquidity-low refusal and reservation race test (TC6.09); production nostro dashboard                                                                                                                                                             | Integration test report, dashboard snapshot, pre-funding records with approvals                                                                                                                                                      |
-| Settlement and reconciliation                       | Daily files delivered and acknowledged by the sponsor bank/partner; recon match rate ≥ 99 % with every break explained                                                                                                                            | Settlement batch list with hashes, partner acknowledgement e-mails/files, recon run exports, break resolutions with evidence                                                                                                         |
-| Regulatory fields and reports                       | 100 % of cross-border transfers carry purpose, source of funds and identity snapshot; BEAC FX declaration for the pilot period generated and accepted on test data                                                                                | Query export (zero nulls), report file with checksum, sponsor bank validation note                                                                                                                                                   |
-| Deployable alone                                    | Phase 5 domestic suite unchanged on expanded schema (TC6.18); dark-deploy week with zero customer-visible change                                                                                                                                  | CI run links, production flag history export, Sentry release comparison                                                                                                                                                              |
+| Criterion                                                     | How demonstrated                                                                                                                                                                                                                   | Evidence artifact                                                                                                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User can send money between supported countries               | Friends-and-family `CM→GA` (≥ 50 real transfers) and canary `CM→GA`, `CM→TD`, `CM→CG`, `GA→CM` in production: transfer success ≥ 98 %, payout p95 < 15 min, every transfer `PAID_OUT` with ledger, leg and partner statement line in agreement | Grafana `intl-overview` export for the canary week; recon run reports; sampled transfer inspector screenshots; TC6.01, TC6.10–TC6.15 results        |
+| Exchange rate applied automatically                           | Quote shows rate, markup, fee and receive amount without operator action; rate locked for the window; the same `customerRateNum` appears in quote, detail, journals, receipt, settlement line and BEAC declaration line                 | TC6.02–TC6.09 results; property-test report; sample receipt + settlement file + report line for one transfer; shadow comparison vs Phase 7 engine (W7) |
+| Corridor configuration drives behaviour (brief)              | Changing limits, markup, lock window or pausing a corridor in the admin console takes effect within 30 s without deploy                                                                                                              | Admin audit log entries + before/after quotes; TC6.15                                                                                                 |
+| Pre-funding and liquidity protect customers                   | Quotes refused at liquidity floor; pre-funding lifecycle restores quoting                                                                                                                                                            | TC6.14; nostro liquidity dashboard; pre-funding instruction records                                                                                    |
+| Settlement and reconciliation                                 | Daily files delivered to partners; match rate ≥ 99.5 % for 5 consecutive business days; all breaks classified                                                                                                                       | Settlement batch list; recon run summaries; partner acceptance e-mails                                                                                 |
+| Regulatory capture and reporting                              | Every cross-border transfer carries purpose, source of funds, relationship and snapshots; first BEAC statistics file produced for the partner's July submission                                                                      | DB check script output; report file + `regulatory_report_items` count; compliance review record                                                        |
 
 ---
 
 ## 13. Risks & Mitigations
 
-| ID    | Risk                                                                                                                           | Likelihood | Impact | Mitigation                                                                                                                                                                                           | Owner                    |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------ | ---------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| R6.1  | Sponsor bank / payment-institution arrangement in Cameroon (COBAC) not signed by W6, blocking any real CEMAC outbound transfer | High       | High   | Start W1 with a short-list of two banks; design is partner-agnostic (corridor `licenceBasis`); friends-and-family can run under the partner's licence with volume caps; phase remains shippable dark | PM / Compliance          |
-| R6.2  | BEAC FX declaration layout and thresholds not confirmed in time                                                                | Med        | High   | Layout versioned (`layoutVersion`), generator table-driven; intra-CEMAC XAF corridors (no FX declaration) go first; cross-currency corridors stay `SANDBOX` until confirmed                          | Compliance               |
-| R6.3  | AOA/MZN official vs parallel-market rate gap makes customer rates uncompetitive or loss-making                                 | Med        | Med    | Market source + corridor markup reviewed daily by treasury ops; drift guard; Phase 7 pricing engine; inbound-only corridors for AO/MZ limit exposure                                                 | Architect / Treasury ops |
-| R6.4  | Pre-funding capital tied up across 6 currencies; nostros run dry at month-end peaks                                            | Med        | High   | `minReserve` + projected-outflow alerts; liquidity-low refusal protects customers; pre-funding runbook with partner cut-offs; Phase 7 automates rebalancing                                          | Treasury ops / PM        |
-| R6.5  | Phase 5 artefacts (ledger API, `Transfer` shape) differ from assumptions in §5.1                                               | Med        | Med    | M6.1 verification with Phase 5 lead; adapter layer `TransferSagaHooks`; model changes confined to names                                                                                              | Architect                |
-| R6.6  | Phase 7 (starts W5) and Phase 6 both touch FX, causing duplicated or conflicting work                                          | Med        | Med    | Boundary fixed at M6.1 (Phase 6 = ingestion, quotes, nostro records; Phase 7 = aggregation, hedging, rebalancing); shared `FxRateProvider` interface; joint review at M6.5                           | Architect / PM           |
-| R6.7  | Unitel Money / e-Mola `EXPERIMENTAL` adapters (Phase 4) fail partner UAT                                                       | Med        | Med    | Aggregator route as fallback for AO/MZ; corridors stay `SANDBOX`; wave B is not a phase-exit criterion                                                                                               | Backend lead             |
-| R6.8  | Saga/ledger defect causes unbalanced journals or double payout                                                                 | Low        | High   | Property and chaos tests, per-currency invariant job, idempotency at three levels, drain gate before deploy, recon backstop                                                                          | Backend lead / QA        |
-| R6.9  | Partner statements arrive late or in inconsistent layouts, breaking recon SLAs                                                 | High       | Med    | Per-partner parsers with golden files, tolerant matching, late-file handling (recon re-run), manual ingest path                                                                                      | Backend lead / Ops       |
-| R6.10 | Vendor rate feed outage or wrong ticks                                                                                         | Med        | Med    | Last-good + age guard, auto-freeze, pegged pairs independent, manual `PARTNER_QUOTE` entry with four-eyes, second vendor in Phase 7                                                                  | DevOps / Treasury ops    |
-| R6.11 | Recipient-side regulation (BNA, BM) requires sender data fields we do not capture                                              | Med        | Med    | Snapshot design extensible (JSON), compliance review of partner onboarding questionnaires in W1–W2                                                                                                   | Compliance               |
-| R6.12 | Core team capacity: Phase 5 close-out defects compete with Phase 6 W1–W2                                                       | Med        | Med    | One backend engineer on Phase 5 support rota W1–W2, PM re-plans M6.2 scope (routing fallback can slip to W3)                                                                                         | PM                       |
-| R6.13 | Customer confusion about receive amount vs partner-side fees charged to the recipient (cash-out fees)                          | Med        | Low    | Disclose "recipient's provider may charge cash-out fees" per corridor; receive amount guaranteed at wallet credit                                                                                    | Product / Design         |
-| R6.14 | Timezone/cut-off errors produce wrong value dates in files                                                                     | Low        | Med    | Corridor `settlementTimezone`, Luxon-based scheduler tests across DST-free African zones, golden files per partner                                                                                   | Backend lead             |
+| ID    | Risk                                                                                                                             | Likelihood | Impact | Mitigation                                                                                                                                                                                                                                  | Owner                      |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| R6.1  | Sponsor bank / payment-institution arrangement in Cameroon (COBAC) not signed by W6, blocking real CEMAC outbound transfers       | High       | High   | Two-bank short-list from W1; design is partner-agnostic (`licenceBasis` on corridor); friends-and-family can run under the partner EMI's licence with caps; phase remains shippable dark; wave A exit criterion can move to Phase 12 ladder | Program Manager / Compliance |
+| R6.2  | BEAC FX declaration layout, documentary thresholds or submission channel not confirmed in time                                   | Med        | High   | Table-driven generators with `layoutVersion`; thresholds as `Setting`s; intra-CEMAC XAF corridors (statistics only) go first; cross-currency corridors stay `SANDBOX` until confirmed                                                       | Compliance Analyst         |
+| R6.3  | AOA/MZN official vs parallel-market rate gap makes customer rates uncompetitive or loss-making                                    | Med        | Med    | Daily markup review by treasury ops; deviation guard; inbound-only AO/MZ limits exposure; Phase 7 margin engine from 2027-08-06                                                                                                             | Architect / Treasury ops   |
+| R6.4  | Pre-funding capital tied up across six currencies; nostros run dry at month-end peaks                                            | Med        | High   | `minReserveMinor` + projected-outflow alerts; liquidity-low refusal protects customers; pre-funding runbook with partner cut-offs; Phase 7 automates rebalancing                                                                             | Treasury ops / PM          |
+| R6.5  | Phase 5 artefacts (`SagaStepRegistry`, `LedgerService` pair link) need changes discovered late                                   | Low        | Med    | M6.1 verification with Phase 5 lead; Phase 5 handover explicitly lists the slots; changes confined to additive hooks                                                                                                                        | Solution Architect         |
+| R6.6  | Phase 7 (from our W5) and Phase 6 both touch FX, causing duplicated or conflicting work                                           | Med        | Med    | Boundary fixed at M6.1 (Phase 6 = table provider, quotes, nostro records; Phase 7 = composition, margins, treasury); shared `FxRateProvider` interface + contract suite; joint review at M6.5                                               | Architect / PM             |
+| R6.7  | Staffing drop from 4 to 2 backend engineers on 2027-06-28 delays hardening or wave B                                              | Med        | Med    | Saga/ledger/settlement front-loaded W1–W4; W5–W8 scope is portals, hardening, rollout; wave B is not an exit criterion; PM can borrow one platform engineer for W7 if Phase 7 is ahead                                                     | Program Manager            |
+| R6.8  | Unitel Money / e-Mola Phase 4 adapters fail partner UAT                                                                          | Med        | Med    | Aggregator route as fallback for AO/MZ; corridors stay `SANDBOX`; wave B deferred                                                                                                                                                           | Backend lead               |
+| R6.9  | Saga/ledger defect causes unbalanced position or double payout                                                                   | Low        | High   | Property and chaos tests, nightly pair invariant job, idempotency at three levels, drain gate, recon backstop with `DUPLICATE` kind                                                                                                          | Backend lead / QA          |
+| R6.10 | Partner statements arrive late or in inconsistent layouts, breaking recon SLAs                                                   | High       | Med    | Per-partner parsers with golden files, tolerant matching, late-file re-run, manual ingest path, quarantine instead of failure                                                                                                               | Backend lead / Finance ops |
+| R6.11 | FX vendor outage or wrong ticks                                                                                                  | Med        | Med    | Last-good + age guard, deviation guard, auto-freeze, pegged pairs unaffected, manual rate with four-eyes, second vendor in Phase 7                                                                                                           | DevOps / Treasury ops      |
+| R6.12 | Recipient-side regulators (BNA, BM) require sender data fields not captured                                                      | Med        | Med    | Snapshot JSON extensible; partner onboarding questionnaires reviewed W1–W2; `requiredFields` per corridor                                                                                                                                   | Compliance Analyst         |
+| R6.13 | Customer confusion about receive amount vs recipient-side cash-out fees                                                          | Med        | Low    | Per-route `recipientFeeMinor` disclosure; receive amount guaranteed at wallet credit; help articles                                                                                                                                         | Product / Design           |
+| R6.14 | Time-zone / cut-off errors produce wrong value dates in files                                                                    | Low        | Med    | Corridor `timezone`, Luxon tests across WAT/CAT/CVT/GMT zones (no DST), golden files per partner                                                                                                                                            | Backend lead               |
+| R6.15 | GIMAC routing requirement for intra-CEMAC flows enforced on the partner earlier than expected                                    | Low        | Med    | Partner EMI is a GIMAC member and routes on our behalf; `CorridorRoute` abstraction allows a GIMACPAY route later (Q6.6)                                                                                                                     | Architect / PM             |
 
 ---
 
@@ -1578,84 +1767,105 @@ flowchart LR
 
 ### 14.1 Effort (person-weeks, 8-week phase)
 
-| Role                                                   | PW     | Basis                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend engineers (3 core, 1 on Phase 5 support W1–W2) | 26     | Corridors + routing + admin API (3); FX sources, ingestion, quote engine, shadow mode (4); saga, nostro, reservations, ledger postings, refunds (6); regulatory fields + report generators (3); tracking, tokens, notifications (2); settlement generation, SFTP, parsers (3.5); reconciliation engine + break workflow (3); `aggregator-payout` connector (1.5) |
-| Frontend engineers (2 core)                            | 10     | Admin console: dashboard, corridor matrix/detail, FX, nostro, settlement, recon, explorer, reports (6.5); customer send-international flow, tracking, recipient page, receipts (3.5)                                                                                                                                                                             |
-| QA engineers (1 core + 1 shared W3–W7)                 | 9      | Money property tests with backend (1); integration + chaos harness incl. SFTP (3); e2e 3 locales (2); performance (1); UAT, partner file validation, exit (2)                                                                                                                                                                                                    |
-| Solution architect                                     | 5      | ADRs, ledger model, Phase 5 verification, Phase 7 boundary, partner API evaluation, game day                                                                                                                                                                                                                                                                     |
-| Program manager                                        | 7      | Partner and sponsor-bank negotiations (significant), licensing coordination, milestones, rollout, sign-offs                                                                                                                                                                                                                                                      |
-| Compliance analyst                                     | 6      | Licensing matrix, regulator layouts, purpose/source lists, declarations, DPIA addendum, UAT of reports                                                                                                                                                                                                                                                           |
-| Product designer                                       | 2.5    | Send-international flow, countdown/quote UX, declaration copy, tracking and recipient page, admin break drawer                                                                                                                                                                                                                                                   |
-| DevOps / SRE                                           | 4      | Worker scale, egress allow-listing with partners, bucket Object Lock, partitions, dashboards/alerts, pipelines, SFTP test infra                                                                                                                                                                                                                                  |
-| Security engineer (0.5 FTE)                            | 2.5    | Threat model, token design review, file parser fuzzing scope, pen-test coordination                                                                                                                                                                                                                                                                              |
-| Mobile engineer                                        | 1      | API contract review, push payload design, deep links                                                                                                                                                                                                                                                                                                             |
-| **Total**                                              | **73** |                                                                                                                                                                                                                                                                                                                                                                  |
+| Role                                                     | PW       | Basis                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend engineers (4 W1–W4, 2 W5–W8)                     | 24       | Corridors + routing + admin API (3); FX sources, ingestion, quote service, shadow mode, signing (3.5); `CrossBorderSaga`, two-journal FX posting, nostro + reservations + pre-funding, refunds (5.5); regulatory codes, snapshots, report generators (3); tracking, tokens, notifications (2); settlement batches, renderers, SFTP, parsers (3.5); recon extension (2); `aggregator-payout` connector (1.5) |
+| Frontend engineers (2)                                   | 15       | Admin console: overview, corridor matrix/detail, FX, nostro, settlement, recon extensions, explorer/inspector, reports, codes (9.5); customer send-international flow, tracking, recipient page, receipts, help centre (5.5)                                                                                                                                                                                   |
+| QA engineers (1 W1–W2, 2 W3–W4, 1 W5–W8)                 | 10       | Property/chaos harness with backend (2); integration incl. SFTP/MinIO Testcontainers (2.5); e2e three locales (2); performance (1); UAT, partner file validation, exit (2.5)                                                                                                                                                                                                                                   |
+| Solution architect                                       | 5        | ADR-0018/19/20, ledger pairing design, Phase 5 verification, Phase 7 boundary and contract suite, partner API evaluation, game day                                                                                                                                                                                                                                                                             |
+| Program manager                                          | 7        | Sponsor-bank and partner negotiations, licensing coordination, milestones, rollout ladder, sign-offs                                                                                                                                                                                                                                                                                                            |
+| Compliance analyst                                       | 6        | Licensing matrix, regulator layouts, codes catalogue, declarations and disclosures, DPIA addendum, UAT of reports                                                                                                                                                                                                                                                                                              |
+| Product designer (100 % W1–W4, 50 % W5–W8)               | 3        | Send-international flow, countdown/quote UX, declaration copy, tracking and recipient page, admin inspector and hold drawer                                                                                                                                                                                                                                                                                   |
+| DevOps / SRE                                             | 4        | Worker scale, egress allow-listing with partners/vendor, bucket Object Lock, partitions, dashboards/alerts, workflows (`intl-sandbox-e2e.yml`, `regulatory-reports.yml`, guardrails), simulators                                                                                                                                                                                                               |
+| Security engineer (0.5 FTE)                              | 2.5      | Threat model, quote/token design review, parser fuzzing scope, semgrep rules, pen-test coordination and closure                                                                                                                                                                                                                                                                                                |
+| Mobile engineer                                          | 1        | API contract review, push payload and deep-link design, `mobile-intl.md`                                                                                                                                                                                                                                                                                                                                       |
+| **Total**                                                | **77.5** |                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+Assumptions: 5-day weeks; no public holidays affecting the whole team between 2027-05-31 and 2027-07-23; Phase 5 close-out defects absorbed by the Phase 5 support rota, not this budget; two backend engineers, one frontend engineer and one QA engineer transfer to Phase 7 on 2027-06-28 as per the Phase 7 plan.
 
 ### 14.2 External costs (USD, ranges; assumptions below)
 
-| Item                                                                     | Low          | High          | Recurring                                 | Assumptions                                                              |
-| ------------------------------------------------------------------------ | ------------ | ------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
-| Market FX rate data API (mid tier, 60 s polling)                         | 100          | 500           | monthly                                   | Commercial tier with AOA/MZN coverage                                    |
-| Aggregator / payout partner setup and minimums (CV, ST, GW bank payout)  | 0            | 15,000        | one-off                                   | Setup fees often waived against volume commitments                       |
-| Legal and regulatory counsel (CEMAC/COBAC, AO, MZ, CV, GW, ST)           | 25,000       | 80,000        | one-off                                   | Six jurisdictions; licence opinions and partner agreement reviews        |
-| Sponsor bank / licence application and agency fees                       | 5,000        | 40,000        | one-off                                   | Varies by bank; some charge annual agency fees                           |
-| Pre-funding capital across nostros (XAF, AOA, MZN, CVE, XOF, STN)        | 50,000       | 150,000       | one-off (returnable capital, not expense) | Sized for pilot volumes; Phase 7 right-sizes                             |
-| Provider and partner transaction fees during pilot                       | 300          | 1,500         | one-off                                   | ≈ 200–500 pilot transfers                                                |
-| SFTP test infra + S3-compatible storage with Object Lock                 | 30           | 120           | monthly                                   | Simulator-group container, ~50 GB                                        |
-| Fly worker group +1 machine                                              | 80           | 200           | monthly                                   | Delta over Phase 4 baseline                                              |
-| Neon compute delta (partitions, recon queries)                           | 50           | 150           | monthly                                   | —                                                                        |
-| Upstash Redis delta                                                      | 20           | 60            | monthly                                   | `fx:*` and `intl:*` keys                                                 |
-| Grafana Cloud delta                                                      | 30           | 100           | monthly                                   | Per-corridor label cardinality                                           |
-| External penetration test (W7, quote/lock, tracking, parsers, four-eyes) | 8,000        | 18,000        | one-off                                   | 5–7 days                                                                 |
-| Translation and legal copy (fr/pt declarations, help centre)             | 1,000        | 3,000         | one-off                                   | Professional translation + counsel review                                |
-| **Phase total (8 weeks, ~2 months recurring)**                           | **≈ 40,000** | **≈ 160,000** |                                           | recurring × 2 months; pre-funding capital counted separately (not spend) |
-
-Assumptions: pilot volumes only (≤ 500 transfers) so fee exposure is small; counsel costs dominate and are the widest range because CEMAC licensing can be addressed via a sponsor bank (low) or an own licence application (high, mostly beyond this phase); infra figures are deltas over Phases 1–5; internal salaries excluded.
+| Item                                                                        | Low          | High          | Recurring                                  | Assumptions                                                                                  |
+| --------------------------------------------------------------------------- | ------------ | ------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| FX market data API (commercial tier, 60 s polling, AOA/MZN coverage)        | 100          | 500           | monthly                                    | Redistribution in customer quotes permitted by the tier                                      |
+| Aggregator / bank payout partner setup and minimums (CV, ST, GW bank rails) | 0            | 15,000        | one-off                                    | Setup fees often waived against volume commitments                                           |
+| Legal and regulatory counsel (CEMAC/COBAC, AO, MZ, CV, GW, ST)              | 25,000       | 80,000        | one-off                                    | Six jurisdictions; licence opinions, partner agreement reviews, declaration wording           |
+| Sponsor bank / payment-institution agency fees and application costs        | 5,000        | 40,000        | one-off                                    | Varies by bank; some charge annual agency fees; own-licence application mostly beyond phase  |
+| Pre-funding capital across nostros (XAF, AOA, MZN, CVE, XOF, STN)           | 50,000       | 150,000       | one-off, returnable capital (not expense)  | Sized for pilot volumes; Phase 7 right-sizes                                                 |
+| Provider and partner transaction fees during pilot                          | 300          | 1,500         | one-off                                    | ≈ 200–500 pilot transfers                                                                    |
+| S3-compatible storage with Object Lock + SFTP simulator infra               | 30           | 120           | monthly                                    | ~50 GB, simulator container                                                                  |
+| Fly worker group +1 machine                                                 | 80           | 200           | monthly                                    | Delta over Phase 5 baseline                                                                  |
+| Neon compute delta (partitions, recon and explorer queries)                 | 50           | 150           | monthly                                    | —                                                                                            |
+| Upstash Redis delta                                                         | 20           | 60            | monthly                                    | `fx:*` and `intl:*` keys, seven queues                                                       |
+| Grafana Cloud delta                                                         | 30           | 100           | monthly                                    | Corridor label cardinality                                                                   |
+| External penetration test (W7)                                              | 8,000        | 18,000        | one-off                                    | 5–7 days                                                                                     |
+| Translation and legal copy (`fr`/`pt` declarations, disclosures, help)      | 1,000        | 3,000         | one-off                                    | Professional translation + counsel review                                                    |
+| **Phase total (recurring × 2 months, excluding pre-funding capital)**       | **≈ 40,000** | **≈ 160,000** |                                            | Counsel dominates; low end assumes sponsor-bank route, high end includes own-licence filings |
 
 ---
 
 ## 15. Dependencies & Handover
 
-### 15.1 Needs from earlier phases (verified against the repo and sibling plans)
+### 15.1 Needs from earlier phases
 
-- **Phase 1**: `FeatureFlag` with `rules` + `rolloutPercentage` (friends-and-family and canary), `Setting` (pegs, cut-offs), `AuditLog` interceptor, `Outbox` relay, BullMQ + ioredis, `prom-client`, pino redaction, Zod env validation, `CryptoService` with `ENCRYPTION_KEYS` (bank details), `Money` helpers and currency exponents (XAF/XOF 0, AOA/MZN/CVE/STN 2 — all present in `currencies.ts`), country catalogue (all 11 countries present in `countries.ts`), `PERMISSION_RESOURCES` (needs 7 new resources), `FEATURE_FLAG_KEYS` (needs `intl.*`, `portal.send-international`, `admin.intl.console`), Fly/Vercel/Neon/Upstash/Grafana baseline, S3-compatible document store pattern.
-- **Phase 2**: `CustomerProfile` (`kycLevel`, `nationality`, `idType`, `idNumberLast4`, `sourceOfFundsCode`, `addressCountryCode`) for identity snapshots, `KycLevelPolicy` limits, `Beneficiary` (bank fields, `providerCode`→`providerId`), documents pipeline for licence evidence and break evidence, `@RequiresRecentMfa`.
-- **Phase 3**: `Provider`/`ProviderConnection` for payout providers, the FX vendor and SFTP partners (new `AuthScheme` values `SSH_KEY` if absent — Q6.5), credential store, `ResilientHttpClient`, static egress IPs, provider status for route health, `worker` process group.
-- **Phase 4**: `WalletTransaction` PUSH/PULL legs with `parentType='Transfer'`, `externalReference` idempotency, `UNKNOWN` semantics, `ProviderAccount` float wallets and balance snapshots, connector SDK + conformance + simulator for `aggregator-payout`, `ConnectorKind` enum (gains `AGGREGATOR`), webhook pipeline.
-- **Phase 5**: `Transfer` aggregate and saga hooks, ledger (`ledger_accounts`, `ledger_entries`, `postJournal` with idempotency), fee schedules, limit enforcement, domestic country settings for domestic corridor backfill, `TransferKind` enum (gains `CROSS_BORDER`).
-- **Gaps to close in W1**: register permissions, flags and `API_ROUTES`; add `intl` Zod schemas; confirm Phase 5 names (§5.1); add `packages/connectors/aggregator-payout` and simulator profiles to Turborepo and CODEOWNERS; add `ssh2-sftp-client`, `fast-check`, `luxon` (or `@date-fns/tz`) dependencies.
+- **Phase 1**: `FeatureFlag` (`rules`, `rolloutPercentage`, `rolloutBucket`), `Setting`, `AuditLog` interceptor, `Outbox` relay, BullMQ + ioredis, `prom-client`, pino redaction, Zod env validation, `CryptoService` with `ENCRYPTION_KEY`, `Money` helpers and currency exponents, locales `en/fr/pt`, notification templates and channels.
+- **Phase 2**: `CustomerProfile` (`kycLevel`, `nationality`, `idType`, `idNumberLast4`, `dateOfBirth`, `addressCountryCode`, `sourceOfFundsCode` default), `KycLevelPolicy` limits, `Beneficiary` (bank fields, `providerCode`, `relationship`), `@RequiresRecentMfa`, documents uploader for evidence.
+- **Phase 3**: `Provider` / `Connection` for payout providers, the FX vendor (`category=FX`) and SFTP partners (`AuthScheme.SSH_KEY` added here), credential vault and rotation policies, `ResilientHttpClient`, static egress IPs, provider health/circuit state, `worker` process group.
+- **Phase 4**: `WalletTransaction` PUSH/PULL legs with `parentType='Transfer'`, `externalReference` idempotency, `UNKNOWN` semantics and operator resolution events, `ProviderAccount` float wallets and balance snapshots, connector SDK + conformance kit + simulator (for `aggregator-payout`), `ConnectorKind` (gains `AGGREGATOR`), webhook pipeline.
+- **Phase 5**: `Transfer` aggregate, `TransferSaga` + `SagaStepRegistry` with `FX_CONVERT` / `COMPLIANCE_HOLD` slots and table-driven compensation, `LedgerService` single-currency journals and `createAccount`, `FeeEngine` scope `corridorKey`, `LimitService` per currency, receipts renderer, `notification_dedup`, `recon` module and `ReconciliationSource` interface, `TransferType` (gains `CROSS_BORDER`), `TransferStatus` (gains `HELD`), `LedgerJournalKind` (gains `FX_CONVERT`).
+- **Gaps to close in W1**: register permissions, flags and `API_ROUTES`; add `intl` Zod schemas; add `packages/connectors/aggregator-payout` and simulator profiles to Turborepo and CODEOWNERS; add `ssh2`, `fast-xml-parser`, `luxon` dependencies (pinned, reviewed by `security.yml`).
 
 ### 15.2 Hands to later phases
 
-| Phase                                     | What Phase 6 provides                                                                                                                                                                                                                                        | Interface                                                                      |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| **7 — FX & Treasury** (2027-06-28)        | `FxRateProvider` interface, `fx_rate_sources`/`fx_rates`/`fx_quotes`, FX position account pairs with open exposure, `nostro_accounts`, `prefunding_instructions`, liquidity view and alerts, markup per corridor, shadow quoting, manual-rate path           | Tables, `FxQuoteService`, `NostroService`, events `intl.fx.*`, `intl.nostro.*` |
-| **8 — AML/Fraud/Compliance** (2027-07-26) | Purpose/source-of-funds/relationship codes, identity and recipient snapshots, `HELD` state with release/refund actions, corridor risk attributes, cross-corridor limit aggregation, `intl.transfer.*` events with counterparty hash, regulatory report store | Tables + events + `/v1/intl/transfers/:id/release                              | refund` |
-| **9 — Partner & Merchant** (2027-08-23)   | Corridor availability API for partners, settlement file formats to reuse, contract migration slot W1                                                                                                                                                         | `/v1/corridors/public`, ADR-0020                                               |
-| **10 — Reporting & BI** (2027-09-20)      | Partitioned `fx_rates` and tracking events, settlement/recon aggregates, regulatory report metadata, corridor dimension on every transfer                                                                                                                    | Tables + Prometheus                                                            |
-| **11 — Mobile** (2027-08-09)              | Quote/confirm/timeline OpenAPI, countdown semantics, push payloads, deep links, recipient tracking page                                                                                                                                                      | OpenAPI + `docs/handbooks/mobile-intl.md`                                      |
-| **12 — Go-Live**                          | Runbooks, drain gate, flag rollout ladder, chaos template, partner escalation matrix                                                                                                                                                                         | `docs/handbooks/*`                                                             |
-| **13 — Expansion**                        | Corridor-by-configuration path (new country = corridor rows + routes + nostro + partner evidence), aggregator connector pattern, licensing matrix template                                                                                                   | Admin console + handbooks                                                      |
+| Phase                                         | What Phase 6 provides                                                                                                                                                                                                                                                                             | Interface                                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **7 — FX & Treasury** (2027-06-28)            | `FxRateProvider` interface + contract suite; `fx_rate_sources`, `fx_rates` (fallback table); `intl_quotes` with `engineQuoteRef` slot; `FX_POSITION:<ccy>` accounts with open balances; `nostro_accounts`, `nostro_reservations`, `prefunding_instructions`; liquidity view and alerts; `fx.corridor.<pair>.enabled` switch point | Tables, `IntlQuoteService`, `NostroService`, events `intl.fx.*`, `intl.nostro.*`, ADR-0019                  |
+| **8 — AML/Fraud/Compliance** (2027-07-26)     | `transfer_cross_border_details` (purpose, source of funds, relationship, snapshots, `hold_reason`, `state`); `corridors.compliance_rules`; `HELD` state with release/refund endpoints and `COMPLIANCE_HOLD` slot; `intl.transfer.*` events with `counterpartyHash`; USD-equivalent `CROSS_BORDER` counter; `regulatory_reports` store; `regulatory-reports.yml` | Tables + events + `/v1/intl/transfers/:id/release` and `/refund`                                            |
+| **9 — Partner & Merchant** (2027-08-23)       | Corridor availability API for partner payouts, settlement file formats, Phase 6 contract migration executed in Phase 9's W1 slot                                                                                                                                                                 | `/v1/corridors/public`, ADR-0020, `20270823100000_phase6_contract`                                          |
+| **10 — Reporting & BI** (2027-09-20)          | `corridors`, `corridor_routes`, `transfer_tracking_events` (`FX_LOCKED`, `PAYOUT_CONFIRMED` for settlement-time metrics), `settlement_batches`, `regulatory_reports` metadata, corridor dimension on every transfer                                                                              | Tables + Prometheus metrics                                                                                 |
+| **11 — Mobile** (2027-08-09)                  | `/v1/intl/*` OpenAPI with `nextAction`, countdown semantics, push payloads, deep links, recipient tracking page                                                                                                                                                                                   | OpenAPI + `docs/handbooks/mobile-intl.md`                                                                   |
+| **12 — Go-Live** (2027-11-01)                 | `CorridorService` status API for the launch ladder, runbooks, drain gate, flag rollout ladder, chaos templates, partner escalation matrix                                                                                                                                                         | `POST /v1/corridors/:id/status`, `docs/runbooks/intl-*.md`                                                  |
+| **13 — Expansion** (2028-01-03)               | Country-as-configuration path (corridor rows + routes + nostro + licence evidence), `CrossBorderSaga` step table extensible with `INTER_REGION_HANDOFF`, aggregator connector pattern, licensing matrix template                                                                                   | Admin console + handbooks + `SagaStepRegistry`                                                              |
 
 ### 15.3 Open questions
 
-| ID   | Question                                                                                                                                                                | Owner                     | Needed by                                                |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------- |
-| Q6.1 | Which market FX data vendor (coverage of AOA/MZN, licensing for redistribution in quotes, price)?                                                                       | Architect / PM            | 2027-06-04 (M6.1)                                        |
-| Q6.2 | Exact BEAC FX declaration layout, documentary thresholds and submission channel via the sponsor bank; BNA/BM report layouts                                             | Compliance / sponsor bank | 2027-06-18 (M6.3) for layout v1; 2027-07-02 (M6.5) final |
-| Q6.3 | Sponsor bank for Cameroon: which bank, agency model vs own COBAC payment-institution application timeline                                                               | PM / Compliance           | 2027-06-11 (M6.2)                                        |
-| Q6.4 | Will any partner require BI-Rem to host an SFTP endpoint (push model)? If yes, Fly `sftp` machine vs managed service in Phase 9                                         | DevOps / PM               | 2027-06-25 (M6.4)                                        |
-| Q6.5 | Does Phase 3 `AuthScheme` cover SSH-key credentials and does `ProviderCategory` have a value for data vendors and SFTP partners?                                        | Phase 3 lead / Architect  | 2027-06-04 (M6.1)                                        |
-| Q6.6 | GIMACPAY participation for intra-CEMAC interoperability — Phase 13 or earlier via sponsor bank?                                                                         | Architect / PM            | 2027-07-16 (M6.7)                                        |
-| Q6.7 | Fee refund policy on failed payouts (default: full refund incl. fee) and who bears partner fees on reversals                                                            | Product / Finance         | 2027-06-18 (M6.3)                                        |
-| Q6.8 | Friends-and-family user list ownership and cap (`XAF 50,000`) sign-off; canary percentages                                                                              | PM / Compliance           | 2027-07-02 (M6.5)                                        |
-| Q6.9 | Phase 5 ledger API names and whether journals support multi-currency entries in one journal id (we assume one currency per journal and link the pair via `fxJournalId`) | Phase 5 lead              | 2027-06-04 (M6.1)                                        |
+| ID    | Question                                                                                                                                                                   | Owner                      | Needed by          |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------ |
+| Q6.1  | Which FX data vendor (AOA/MZN coverage, redistribution licence, price tier)?                                                                                               | Architect / PM             | 2027-06-04 (M6.1)  |
+| Q6.2  | Exact BEAC declaration layout, documentary thresholds and submission channel via the sponsor bank; BNA / BM return layouts                                                 | Compliance / sponsor bank  | 2027-06-18 layout v1; 2027-07-02 final |
+| Q6.3  | Sponsor bank for Cameroon: which bank, agency model vs own COBAC payment-institution application timeline                                                                  | PM / Compliance            | 2027-06-11 (M6.2)  |
+| Q6.4  | Will any partner require BI-Rem to host an SFTP endpoint (push model)? If yes, Fly `sftp` machine vs managed service                                                        | DevOps / PM                | 2027-06-25 (M6.4)  |
+| Q6.5  | Confirm Phase 3 `AuthScheme` extension `SSH_KEY` and `ProviderCategory.FX` reuse for the vendor; category for SFTP partners (`BANK` vs `OTHER`)                             | Phase 3 lead / Architect   | 2027-06-04 (M6.1)  |
+| Q6.6  | GIMACPAY route for intra-CEMAC interoperability — Phase 13 or earlier through the sponsor EMI?                                                                              | Architect / PM             | 2027-07-16 (M6.7)  |
+| Q6.7  | Fee refund policy on failed payouts (default: full refund incl. fee) and who bears partner fees on reversals                                                               | Product / Finance          | 2027-06-18 (M6.3)  |
+| Q6.8  | Friends-and-family user list ownership and cap (`XAF 50,000`); canary percentages                                                                                          | PM / Compliance            | 2027-07-02 (M6.5)  |
+| Q6.9  | Phase 5 `SagaStepRegistry` API shape for registering a type-specific step table and compensation table; `LedgerService.post()` accepting `fxPairJournalId`                 | Phase 5 lead               | 2027-06-04 (M6.1)  |
+| Q6.10 | Column naming alignment with Phase 7 (`transfers.intl_quote_id` here vs `fx_quote_id`/`fx_conversion_id` planned in Phase 7) — keep both or converge at the Phase 9 contract? | Architect / Phase 7 lead   | 2027-07-02 (M6.5)  |
 
 ### 15.4 Operational procedures established in Phase 6
 
-Pause/resume a corridor; move a corridor through `SANDBOX → FRIENDS_FAMILY → LIVE` with evidence and approvals; freeze/unfreeze FX and enter a manual rate with four-eyes; respond to a stale-rate or vendor outage alert; top up a nostro (pre-funding draft → approve → sent → received → reconciled); respond to a liquidity-low alert; release, refund or retry a `HELD` transfer with evidence; close, generate, deliver and redeliver settlement batches; manually ingest a partner statement; run reconciliation on demand and resolve breaks by type (incl. write-off approvals and adjusting journals); generate, review and submit regulatory reports and regenerate a superseded version; rotate vendor API keys, SFTP keys and the tracking HMAC key; change partner SFTP paths or layouts (parser version bump with golden files); drain in-flight transfers before a deploy or rollback; onboard a new corridor end-to-end (corridor row → routes → nostro → partner evidence → flags → friends-and-family → canary).
+1. Pause and resume a corridor (incl. handling of transfers parked `HELD`).
+2. Promote a corridor `SANDBOX → FRIENDS_FAMILY → LIVE` with checklist, evidence and second approver.
+3. Freeze and unfreeze FX; enter and approve a manual rate (four-eyes).
+4. Respond to a stale-rate, deviation-rejected or vendor-outage alert.
+5. Top up a nostro: pre-funding draft → approve → sent → received → reconciled, with partner cut-offs.
+6. Respond to a liquidity-low alert and to an auto-paused corridor.
+7. Release, refund or retry a `HELD` transfer with evidence and second approver.
+8. Close, regenerate and redeliver a settlement batch; manual statement ingest when SFTP is down.
+9. Daily reconciliation review and break resolution with journals.
+10. Generate, review and submit a regulatory report; handle a rejection.
+11. Rotate a recipient tracking token; respond to a suspected tracking-link leak.
+12. Drain gate and API rollback with in-flight cross-border transfers.
 
 ### 15.5 Support scenarios this phase prepares for
 
-Sender asks where their money is (lookup by `trackingRef` → timeline → ETA vs corridor SLA → `HELD` reason script); recipient says the money has not arrived although the sender sees `PAID_OUT` (Phase 4 leg detail and provider transaction id → partner enquiry → `STATUS_MISMATCH` break if needed); customer disputes the rate (receipt shows locked rate, markup disclosure, quote timestamp vs `lockedUntil`); quote keeps failing with "rate unavailable" (FX freeze/stale alert → vendor status → pegged corridors unaffected); "liquidity low" shown to customers on one corridor (treasury top-up runbook, communicate ETA); transfer stuck in `HELD` for `FX_DRIFT` (treasury decision within SLA); transfer refunded unexpectedly (payout failure reason, partner fee, refund timeline); partner reports a payout we do not have (`MISSING_IN_LEDGER` break → investigate duplicate/forged file); monthly regulatory report shows a count mismatch (regenerate with supersede, audit trail); recipient tracking link expired or shared with a third party (resend from sender's portal, token rotation); customer wants to send to Angola or Mozambique from a country not yet enabled (corridor matrix explanation, waitlist flag).
+- Sender asks where the money is → lookup by tracking ref → timeline → ETA vs corridor SLA → `HELD` reason script.
+- Recipient says the money has not arrived although the sender sees `PAID_OUT` → leg detail and provider transaction id → partner enquiry → `STATUS_MISMATCH` break if needed.
+- Customer disputes the rate → receipt shows locked rate, markup disclosure and quote timestamp vs `fx_rates` tick at that time.
+- Quote keeps expiring before the customer can confirm → explain lock window, suggest confirming within the countdown; check for client clock issues via server-time countdown.
+- Transfer refused with `CORRIDOR_LIQUIDITY_LOW` → explain temporary unavailability, suggest smaller amount or retry; treasury pre-funding in progress.
+- Customer wants to cancel → allowed only before the pull leg is submitted; otherwise refund path after payout failure or `HELD` refund by operator.
+- Recipient's provider charged a cash-out fee → disclosure per route; receive amount guaranteed at wallet credit.
+- Customer asks why purpose of transfer and source of funds are required → regulator notice per corridor; help article.
+- Transfer `HELD` for manual review → expected resolution time; operator contact path; no customer action required unless `COMPLETE_PROFILE`.
+- Regulator or partner asks for the data behind a report line → `regulatory_report_items` drill-down to transfers.
