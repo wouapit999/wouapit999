@@ -1,0 +1,5 @@
+bucket         = "bi-rem-terraform-state"
+key            = "staging/api.tfstate"
+region         = "eu-central-1"
+dynamodb_table = "bi-rem-terraform-locks"
+encrypt        = true

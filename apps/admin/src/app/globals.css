@@ -1,0 +1,192 @@
+@import 'tailwindcss';
+
+/*
+ * BI-Rem admin design tokens. Brand: deep green (#0B6E4F), gold (#F2B705), neutral slate.
+ * Every component uses the semantic tokens (surface/fg/border/accent/…) which flip for dark mode
+ * either through `prefers-color-scheme` or the explicit `data-theme` attribute set by the theme
+ * toggle, so no component needs `dark:` variants.
+ */
+@theme {
+  --color-brand-50: #e9f5f0;
+  --color-brand-100: #c7e6d9;
+  --color-brand-200: #9fd4bf;
+  --color-brand-300: #6fbf9f;
+  --color-brand-400: #3f9f7b;
+  --color-brand-500: #1b865f;
+  --color-brand-600: #0b6e4f;
+  --color-brand-700: #095a41;
+  --color-brand-800: #074633;
+  --color-brand-900: #053325;
+  --color-brand-950: #032118;
+
+  --color-gold-50: #fff9e6;
+  --color-gold-100: #feefbf;
+  --color-gold-200: #fde28c;
+  --color-gold-300: #fbd45a;
+  --color-gold-400: #f7c52c;
+  --color-gold-500: #f2b705;
+  --color-gold-600: #c99704;
+  --color-gold-700: #9f7703;
+  --color-gold-800: #745602;
+  --color-gold-900: #4a3701;
+
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sidebar: var(--surface-sidebar);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-fg: var(--accent-soft-fg);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-soft-fg: var(--gold-soft-fg);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-diff-added: var(--diff-added);
+  --color-diff-removed: var(--diff-removed);
+
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  --font-mono:
+    ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --radius-card: 0.875rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 6px 20px -12px rgb(15 23 42 / 0.16);
+}
+
+:root {
+  color-scheme: light;
+  --surface: #f8fafc;
+  --surface-muted: #f1f5f9;
+  --surface-raised: #ffffff;
+  --surface-sidebar: #053325;
+  --fg: #0f172a;
+  --fg-muted: #475569;
+  --fg-subtle: #64748b;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --accent: #0b6e4f;
+  --accent-fg: #ffffff;
+  --accent-soft: #e9f5f0;
+  --accent-soft-fg: #074633;
+  --gold-soft: #feefbf;
+  --gold-soft-fg: #4a3701;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --warning: #a16207;
+  --warning-soft: #fef3c7;
+  --info: #1d4ed8;
+  --info-soft: #dbeafe;
+  --diff-added: #dcfce7;
+  --diff-removed: #fee2e2;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface: #0b1220;
+  --surface-muted: #111a2c;
+  --surface-raised: #152038;
+  --surface-sidebar: #07101d;
+  --fg: #e2e8f0;
+  --fg-muted: #94a3b8;
+  --fg-subtle: #64748b;
+  --border: #1e293b;
+  --border-strong: #334155;
+  --accent: #3f9f7b;
+  --accent-fg: #03140e;
+  --accent-soft: #0f2d22;
+  --accent-soft-fg: #9fd4bf;
+  --gold-soft: #3a2a0a;
+  --gold-soft-fg: #fde28c;
+  --danger: #f87171;
+  --danger-soft: #3f1d1d;
+  --success: #4ade80;
+  --success-soft: #0f2d1b;
+  --warning: #fbbf24;
+  --warning-soft: #3a2a0a;
+  --info: #60a5fa;
+  --info-soft: #172554;
+  --diff-added: #0f2d1b;
+  --diff-removed: #3f1d1d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --surface: #0b1220;
+    --surface-muted: #111a2c;
+    --surface-raised: #152038;
+    --surface-sidebar: #07101d;
+    --fg: #e2e8f0;
+    --fg-muted: #94a3b8;
+    --fg-subtle: #64748b;
+    --border: #1e293b;
+    --border-strong: #334155;
+    --accent: #3f9f7b;
+    --accent-fg: #03140e;
+    --accent-soft: #0f2d22;
+    --accent-soft-fg: #9fd4bf;
+    --gold-soft: #3a2a0a;
+    --gold-soft-fg: #fde28c;
+    --danger: #f87171;
+    --danger-soft: #3f1d1d;
+    --success: #4ade80;
+    --success-soft: #0f2d1b;
+    --warning: #fbbf24;
+    --warning-soft: #3a2a0a;
+    --info: #60a5fa;
+    --info-soft: #172554;
+    --diff-added: #0f2d1b;
+    --diff-removed: #3f1d1d;
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-surface text-fg min-h-dvh;
+  }
+
+  /* Visible, consistent focus ring for keyboard users. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-gold-500) 45%, transparent);
+  }
+
+  dialog::backdrop {
+    background-color: rgb(2 6 23 / 0.55);
+    backdrop-filter: blur(2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

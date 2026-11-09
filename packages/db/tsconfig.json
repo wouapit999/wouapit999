@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": ["node"],
+    "lib": ["ES2023"],
+    "allowJs": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "generated/**/*.ts",
+    "prisma/**/*.ts",
+    "test/**/*.ts",
+    "prisma.config.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

@@ -1,0 +1,60 @@
+name: Deploy admin portal
+
+# Preview deployment for every pull request (commented on the PR), production on push to
+# main. Both go through the Vercel CLI (infra/vercel/README.md). Set the repository variable
+# VERCEL_GIT_INTEGRATION=true to hand deployments over to Vercel's Git integration instead.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target
+        type: choice
+        required: true
+        options: [preview, production]
+        default: preview
+
+concurrency:
+  group: deploy-admin-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    # Fork and Dependabot pull requests cannot read the `preview` environment secrets, so they
+    # are not deployed (the CI workflow still runs for them).
+    if: >-
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.actor != 'dependabot[bot]') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'preview')
+    uses: ./.github/workflows/vercel-deploy.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      app: admin
+      workspace: '@bi-rem/admin'
+      environment: preview
+      project_id_secret: VERCEL_PROJECT_ID_ADMIN
+      force: ${{ github.event_name == 'workflow_dispatch' }}
+    secrets: inherit
+
+  production:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    uses: ./.github/workflows/vercel-deploy.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      app: admin
+      workspace: '@bi-rem/admin'
+      environment: production
+      project_id_secret: VERCEL_PROJECT_ID_ADMIN
+      force: ${{ github.event_name == 'workflow_dispatch' }}
+    secrets: inherit

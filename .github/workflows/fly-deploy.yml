@@ -1,0 +1,121 @@
+name: Fly deploy (reusable)
+
+# Deploys a pre-built API image digest to a Fly app. Called by deploy-api.yml for staging
+# and production; the GitHub Environment supplies FLY_API_TOKEN and the protection rules.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment name (staging | production)
+        required: true
+        type: string
+      fly_app:
+        description: Fly app name
+        required: true
+        type: string
+      image:
+        description: Image reference pinned by digest (ghcr.io/...@sha256:...)
+        required: true
+        type: string
+      url:
+        description: Public base URL used for the environment link and the smoke test
+        required: true
+        type: string
+    secrets:
+      FLY_API_TOKEN:
+        # Supplied via `secrets: inherit` from the GitHub Environment named in `environment`.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.fly_app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.url }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      FLY_APP: ${{ inputs.fly_app }}
+      SOURCE_IMAGE: ${{ inputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mirror the digest into the Fly registry
+        # Fly machines pull from registry.fly.io with the app's credentials, so the exact
+        # GHCR digest is re-tagged there. No rebuild: staging and production run identical bytes.
+        id: mirror
+        run: |
+          set -euo pipefail
+          target="registry.fly.io/${FLY_APP}:${GITHUB_SHA::12}"
+          docker pull "$SOURCE_IMAGE"
+          docker tag "$SOURCE_IMAGE" "$target"
+          flyctl auth docker
+          docker push "$target"
+          echo "image=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Record pre-deploy release (for rollback)
+        id: previous
+        run: |
+          previous="$(flyctl releases --app "$FLY_APP" --json 2>/dev/null | jq -r '.[0].ImageRef // .[0].image_ref // empty' || true)"
+          echo "image=${previous}" >> "$GITHUB_OUTPUT"
+          echo "Previous image: ${previous:-none}"
+
+      - name: fly deploy (release_command runs prisma migrate deploy)
+        run: |
+          flyctl deploy \
+            --app "$FLY_APP" \
+            --config infra/fly/api.fly.toml \
+            --image "${{ steps.mirror.outputs.image }}" \
+            --env "GIT_SHA=${GITHUB_SHA}" \
+            --label "git-sha=${GITHUB_SHA}" \
+            --wait-timeout 600 \
+            --yes
+
+      - name: Smoke test
+        env:
+          EXPECTED_GIT_SHA: ${{ github.sha }}
+          SMOKE_URL: ${{ inputs.url }}
+        run: infra/scripts/smoke-test.sh "$SMOKE_URL"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## ${{ inputs.environment }}: ${FLY_APP}"
+            echo
+            echo "- Image: \`${SOURCE_IMAGE}\`"
+            echo "- Fly tag: \`${{ steps.mirror.outputs.image }}\`"
+            echo "- Previous image: \`${{ steps.previous.outputs.image || 'none' }}\`"
+            echo "- Status: **${{ job.status }}**"
+            echo
+            echo "### Rollback"
+            echo
+            echo '```bash'
+            echo "flyctl releases --app ${FLY_APP}"
+            if [ -n "${{ steps.previous.outputs.image }}" ]; then
+              echo "flyctl deploy --app ${FLY_APP} --config infra/fly/api.fly.toml --image ${{ steps.previous.outputs.image }} --yes"
+            else
+              echo "flyctl deploy --app ${FLY_APP} --config infra/fly/api.fly.toml --image <previous image ref> --yes"
+            fi
+            echo '```'
+            echo
+            echo "Schema changes are expand/contract and stay compatible with the previous release;"
+            echo "for a destructive migration restore the Neon branch (infra/scripts/db-restore.sh)."
+          } >> "$GITHUB_STEP_SUMMARY"

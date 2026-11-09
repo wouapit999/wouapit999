@@ -42,6 +42,7 @@
     "clean": "rm -rf dist generated coverage .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@bi-rem/shared": "workspace:*",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "argon2": "^0.45.2",

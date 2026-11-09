@@ -1,0 +1,168 @@
+name: Deploy API
+
+# main  -> build + push ghcr.io image -> Fly staging (automatic)
+# v*    -> same image pipeline      -> Fly production (GitHub Environment "production" with
+#          required reviewers; approve the run to deploy)
+# Manual: workflow_dispatch lets you redeploy an existing digest to either environment.
+#
+# Note: tags created by release-please with the default GITHUB_TOKEN do not trigger this
+# workflow (GitHub suppresses token-initiated events). Configure RELEASE_PLEASE_TOKEN (see
+# release.yml) or dispatch this workflow manually with the tag checked out.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        options: [staging, production]
+      image:
+        description: Existing image to deploy (ghcr.io/...@sha256:...). Leave empty to build from this ref.
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: deploy-api-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/bi-rem-api
+
+jobs:
+  build:
+    name: Build & push image
+    if: inputs.image == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=bi-rem-api
+            org.opencontainers.image.vendor=BI-Rem
+
+      - name: Build & push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/api.Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  resolve:
+    # Normalises "build this ref" and "redeploy this digest" into one image reference.
+    name: Resolve image
+    needs: [build]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.pick.outputs.image }}
+    steps:
+      - id: pick
+        env:
+          INPUT_IMAGE: ${{ inputs.image }}
+          BUILT_IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          image="${INPUT_IMAGE:-$BUILT_IMAGE}"
+          if [ -z "$image" ]; then
+            echo "::error::No image to deploy"; exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Deploying $image"
+
+  staging:
+    name: Staging
+    needs: [resolve]
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+      )
+    uses: ./.github/workflows/fly-deploy.yml
+    # Must cover everything fly-deploy.yml's job requests (GHCR pull needs packages: read).
+    permissions:
+      contents: read
+      packages: read
+    with:
+      environment: staging
+      fly_app: ${{ vars.FLY_APP_STAGING || 'bi-rem-api-staging' }}
+      image: ${{ needs.resolve.outputs.image }}
+      url: ${{ vars.API_URL_STAGING || 'https://bi-rem-api-staging.fly.dev' }}
+    # Environment-scoped secrets are resolved inside the called job (which sets `environment`).
+    secrets: inherit
+
+  production:
+    name: Production
+    needs: [resolve]
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+      )
+    uses: ./.github/workflows/fly-deploy.yml
+    # Must cover everything fly-deploy.yml's job requests (GHCR pull needs packages: read).
+    permissions:
+      contents: read
+      packages: read
+    with:
+      environment: production
+      fly_app: ${{ vars.FLY_APP_PRODUCTION || 'bi-rem-api' }}
+      image: ${{ needs.resolve.outputs.image }}
+      url: ${{ vars.API_URL_PRODUCTION || 'https://bi-rem-api.fly.dev' }}
+    # Environment-scoped secrets are resolved inside the called job (which sets `environment`).
+    secrets: inherit

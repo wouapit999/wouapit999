@@ -1,0 +1,185 @@
+# BI-Rem local development stack.
+#
+#   docker compose -f infra/docker/docker-compose.yml up -d            # postgres, redis, mailpit
+#   docker compose -f infra/docker/docker-compose.yml --profile apps up --build
+#
+# The default profile only runs the backing services; the apps run on the host through
+# `pnpm dev`. The `apps` profile builds api/web/admin from the Dockerfiles in this folder,
+# which is useful to validate the production images locally before pushing.
+#
+# Credentials below are for local development only and must never be reused elsewhere.
+
+name: birem
+
+x-app-defaults: &app-defaults
+  restart: unless-stopped
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: birem-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: birem
+      POSTGRES_PASSWORD: birem
+      POSTGRES_DB: birem
+      # Match Neon defaults so local and hosted behave the same for text comparisons.
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-birem-init.sql:ro
+    command:
+      - postgres
+      - -c
+      - log_min_duration_statement=250ms
+      - -c
+      - shared_buffers=256MB
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U birem -d birem -h 127.0.0.1']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: birem-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  mailpit:
+    image: axllent/mailpit:v1
+    container_name: birem-mailpit
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+      MP_MAX_MESSAGES: '5000'
+    ports:
+      - '${MAILPIT_SMTP_PORT:-1025}:1025' # SMTP
+      - '${MAILPIT_UI_PORT:-8025}:8025' # Web UI / HTTP API
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  # ---------------------------------------------------------------------------
+  # Optional: the application images (profile "apps")
+  # ---------------------------------------------------------------------------
+  api:
+    <<: *app-defaults
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
+    image: birem/api:local
+    container_name: birem-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      API_PORT: '4000'
+      API_BASE_URL: http://localhost:4000
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001
+      CUSTOMER_PORTAL_URL: http://localhost:3000
+      ADMIN_PORTAL_URL: http://localhost:3001
+      DATABASE_URL: postgresql://birem:birem@postgres:5432/birem?schema=public
+      REDIS_URL: redis://redis:6379
+      RUN_MIGRATIONS: 'true'
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_FROM: BI-Rem <no-reply@bi-rem.local>
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Local-only secrets. NODE_ENV=production makes the API reject "change-me" values and the
+      # example keys shipped in .env.example / CI, so these are distinct 32-byte local values.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-dev-access-secret-not-for-production-0001}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-dev-refresh-secret-not-for-production-01}
+      # base64("local-compose-encryption-key-001"), 32 bytes.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-bG9jYWwtY29tcG9zZS1lbmNyeXB0aW9uLWtleS0wMDE=}
+    ports:
+      - '4000:4000'
+
+  web:
+    <<: *app-defaults
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_APP_NAME: BI-Rem
+        NEXT_PUBLIC_APP_URL: http://localhost:3000
+    image: birem/web:local
+    container_name: birem-web
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      AUTH_COOKIE_SECURE: 'false'
+    ports:
+      - '3000:3000'
+
+  admin:
+    <<: *app-defaults
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/admin.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_APP_NAME: BI-Rem
+        NEXT_PUBLIC_APP_URL: http://localhost:3001
+        NEXT_PUBLIC_ENV: sandbox
+    image: birem/admin:local
+    container_name: birem-admin
+    tmpfs:
+      - /tmp
+      - /app/apps/admin/.next/cache
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      AUTH_COOKIE_SECURE: 'false'
+    ports:
+      - '3001:3001'
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,105 @@
+name: Database migrate
+
+# Manual, audited `prisma migrate deploy` against staging or production. The job runs inside
+# the chosen GitHub Environment, so production inherits its required-reviewer rule: the run
+# waits for approval before the database is touched. Normal deploys apply migrations through
+# the Fly release_command; use this for hotfix migrations or to inspect `migrate status`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target database
+        type: choice
+        required: true
+        options: [staging, production]
+      action:
+        description: status = report pending migrations only; deploy = apply them
+        type: choice
+        required: true
+        options: [status, deploy]
+        default: status
+      confirm:
+        description: Type the environment name again to confirm a deploy
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: db-migrate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: ${{ inputs.action }} on ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    env:
+      # DIRECT_URL (non-pooled Neon endpoint) is preferred by prisma.config.ts; DATABASE_URL
+      # is the fallback. Both are GitHub Environment secrets.
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    defaults:
+      run:
+        working-directory: packages/db
+    steps:
+      - name: Validate request
+        working-directory: .
+        env:
+          ACTION: ${{ inputs.action }}
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET: ${{ inputs.environment }}
+        run: |
+          if [ "$ACTION" = "deploy" ] && [ "$CONFIRM" != "$TARGET" ]; then
+            echo "::error::Confirmation mismatch: type '$TARGET' in the confirm field to deploy"
+            exit 1
+          fi
+          if [ -z "$DIRECT_URL" ] && [ -z "$DATABASE_URL" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secrets are missing on environment '$TARGET'"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: db-migrate
+
+      - name: prisma migrate status
+        id: status
+        run: |
+          set +e
+          pnpm exec prisma migrate status | tee status.txt
+          code=$?
+          set -e
+          {
+            echo "## ${{ inputs.environment }} migration status"
+            echo
+            echo '```'
+            cat status.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # exit 1 = pending migrations, which is expected before a deploy
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then exit "$code"; fi
+
+      - name: prisma migrate deploy
+        if: inputs.action == 'deploy'
+        run: |
+          pnpm exec prisma migrate deploy | tee deploy.txt
+          {
+            echo "## Applied"
+            echo
+            echo '```'
+            cat deploy.txt
+            echo '```'
+            echo
+            echo "Actor: @${{ github.actor }} · run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post-deploy status
+        if: inputs.action == 'deploy'
+        run: pnpm exec prisma migrate status

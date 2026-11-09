@@ -1,0 +1,162 @@
+name: Vercel deploy (reusable)
+
+# Builds a portal with the Vercel CLI (`vercel pull` -> `vercel build` -> `vercel deploy
+# --prebuilt`) so the build runs on GitHub-hosted runners and the deploy is gated by this
+# repository's checks. Called by deploy-web.yml and deploy-admin.yml.
+#
+# Skips automatically when the repository variable VERCEL_GIT_INTEGRATION is "true" (the
+# Vercel Git integration then owns deployments) or when turbo-ignore reports no relevant
+# changes for the workspace.
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: App directory under apps/ (web | admin)
+        required: true
+        type: string
+      workspace:
+        description: pnpm workspace name (e.g. @bi-rem/web)
+        required: true
+        type: string
+      environment:
+        description: GitHub Environment and Vercel target (preview | production)
+        required: true
+        type: string
+      project_id_secret:
+        description: Name of the secret holding the Vercel project id (VERCEL_PROJECT_ID_WEB | VERCEL_PROJECT_ID_ADMIN)
+        required: true
+        type: string
+      force:
+        description: Deploy even if turbo-ignore finds no changes
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      VERCEL_TOKEN:
+        required: false
+      VERCEL_ORG_ID:
+        required: false
+      VERCEL_PROJECT_ID_WEB:
+        required: false
+      VERCEL_PROJECT_ID_ADMIN:
+        required: false
+    outputs:
+      url:
+        description: Deployment URL (empty when skipped)
+        value: ${{ jobs.deploy.outputs.url }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }} ${{ inputs.app }}
+    if: vars.VERCEL_GIT_INTEGRATION != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets[inputs.project_id_secret] }}
+      VERCEL_TARGET: ${{ inputs.environment == 'production' && 'production' || 'preview' }}
+      TURBO_TELEMETRY_DISABLED: 1
+      NEXT_TELEMETRY_DISABLED: 1
+    defaults:
+      run:
+        working-directory: apps/${{ inputs.app }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # turbo-ignore compares against the previous commit
+
+      - uses: ./.github/actions/setup
+        with:
+          install: 'false'
+          turbo-cache-key: vercel-${{ inputs.app }}
+
+      - name: Check required secrets
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v is not configured for environment '$TARGET_ENVIRONMENT' (see infra/vercel/README.md)"
+              exit 1
+            fi
+          done
+
+      - name: turbo-ignore
+        id: changes
+        working-directory: .
+        env:
+          FORCE: ${{ inputs.force }}
+          WORKSPACE: ${{ inputs.workspace }}
+        run: |
+          # exit 0 = nothing relevant changed (skip), exit 1 = changes detected (deploy)
+          if [ "$FORCE" = "true" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"; echo "forced"; exit 0
+          fi
+          if pnpm dlx turbo-ignore@2 "$WORKSPACE"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "no changes for $WORKSPACE"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Vercel CLI
+        if: steps.changes.outputs.skip != 'true'
+        run: npm install --global vercel@65
+
+      - name: vercel pull
+        if: steps.changes.outputs.skip != 'true'
+        run: vercel pull --yes --environment="$VERCEL_TARGET" --token="$VERCEL_TOKEN"
+
+      - name: vercel build
+        if: steps.changes.outputs.skip != 'true'
+        run: |
+          if [ "$VERCEL_TARGET" = "production" ]; then
+            vercel build --prod --token="$VERCEL_TOKEN"
+          else
+            vercel build --token="$VERCEL_TOKEN"
+          fi
+
+      - name: vercel deploy --prebuilt
+        if: steps.changes.outputs.skip != 'true'
+        id: deploy
+        env:
+          WORKSPACE: ${{ inputs.workspace }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          args=(deploy --prebuilt --token="$VERCEL_TOKEN" --meta "githubCommitSha=${GITHUB_SHA}")
+          if [ "$VERCEL_TARGET" = "production" ]; then
+            args+=(--prod)
+          fi
+          url="$(vercel "${args[@]}")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed $WORKSPACE -> $url"
+          echo "- $WORKSPACE ($TARGET_ENVIRONMENT): $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment preview URL on the PR
+        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: vercel-${{ inputs.app }}
+          message: |
+            **${{ inputs.workspace }} preview**: ${{ steps.deploy.outputs.url }}
+            Commit `${{ github.event.pull_request.head.sha }}` — talks to the staging API.
+
+      - name: Skipped
+        if: steps.changes.outputs.skip == 'true'
+        env:
+          WORKSPACE: ${{ inputs.workspace }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "- $WORKSPACE ($TARGET_ENVIRONMENT): skipped, no relevant changes" >> "$GITHUB_STEP_SUMMARY"

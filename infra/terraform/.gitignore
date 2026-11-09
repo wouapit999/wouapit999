@@ -1,0 +1,16 @@
+# Terraform working files. The dependency lock file (.terraform.lock.hcl) IS committed once
+# `terraform init` has run against the real registry.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+*.backend.hcl
+!*.backend.hcl.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc

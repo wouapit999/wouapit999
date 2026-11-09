@@ -1,0 +1,80 @@
+# Dependabot: weekly npm updates grouped by ecosystem to keep PR volume manageable,
+# GitHub Actions and Docker base images weekly.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    labels: [dependencies, npm]
+    groups:
+      nestjs:
+        patterns: ['@nestjs/*', 'nestjs-*', 'rxjs', 'reflect-metadata']
+      prisma:
+        patterns: ['prisma', '@prisma/*']
+        # Stay on the 7.x line; 8.x is still a release candidate.
+        update-types: [minor, patch]
+      nextjs:
+        patterns: ['next', 'react', 'react-dom', '@types/react', '@types/react-dom', '@next/*']
+      opentelemetry:
+        patterns: ['@opentelemetry/*', '@sentry/*']
+      tooling:
+        patterns:
+          [
+            'eslint',
+            '@eslint/*',
+            'typescript-eslint',
+            'prettier',
+            'turbo',
+            'typescript',
+            'vitest',
+            'jest',
+            'ts-jest',
+            '@types/*',
+            'tsx',
+          ]
+        exclude-patterns: ['@types/react', '@types/react-dom']
+      runtime:
+        patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: prisma
+        versions: ['>=8.0.0']
+      - dependency-name: '@prisma/*'
+        versions: ['>=8.0.0']
+      - dependency-name: typescript
+        versions: ['>=6.0.0']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:30'
+      timezone: Africa/Johannesburg
+    commit-message:
+      prefix: 'ci(deps)'
+    labels: [dependencies, github-actions]
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directories:
+      - /infra/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Africa/Johannesburg
+    commit-message:
+      prefix: 'build(docker)'
+    labels: [dependencies, docker]

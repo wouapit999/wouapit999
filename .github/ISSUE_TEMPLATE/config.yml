@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/wouapit999/wouapit999/security/advisories/new
+    about: Please report vulnerabilities privately (see SECURITY.md), never as a public issue.
+  - name: Roadmap & phase plans
+    url: https://github.com/wouapit999/wouapit999/tree/main/docs
+    about: Phase scopes, schedule and architecture decisions live in docs/.

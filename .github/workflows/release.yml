@@ -1,0 +1,58 @@
+name: Release
+
+# release-please (Google) maintains a release PR from Conventional Commits on main: it bumps
+# the root package.json version, updates CHANGELOG.md and, when the PR is merged, creates
+# the git tag + GitHub release. Chosen over changesets/git-cliff because:
+#   - zero config files for a single-version monorepo (`release-type: node` reads the root
+#     package.json; workspaces are private and share the version),
+#   - commit convention already mandated by CLAUDE.md (feat(api): ..., fix(web): ...),
+#   - the generated tag `vX.Y.Z` is exactly what deploy-api.yml uses for production.
+#
+# Tags pushed with the default GITHUB_TOKEN do not trigger other workflows, so set the
+# RELEASE_PLEASE_TOKEN secret (fine-grained PAT: contents + pull-requests write) to let the
+# release tag start the production deploy automatically. Without it, run "Deploy API" by hand.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          release-type: node
+          # Pre-1.0 line: features bump the minor, breaking changes bump the minor as well.
+          bump-minor-pre-major: true
+          bump-patch-for-minor-pre-major: true
+          include-component-in-tag: false
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## release-please"
+            echo
+            echo "- release created: \`${{ steps.release.outputs.release_created || 'false' }}\`"
+            echo "- tag: \`${{ steps.release.outputs.tag_name || 'n/a' }}\`"
+            echo "- PR: ${{ steps.release.outputs.pr && fromJSON(steps.release.outputs.pr).url || 'none / unchanged' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

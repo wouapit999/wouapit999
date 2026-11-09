@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: 'feat(<scope>): '
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who is affected and what can they not do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Target phase
+      description: See docs/roadmap/schedule.json
+      options:
+        - 1 Foundation & Platform Setup
+        - 2 Customer Management & KYC
+        - 3 Connectivity Management Framework
+        - 4 Wallet Connector Engine
+        - 5 Domestic Transfers
+        - 6 International Remittance
+        - 7 FX & Treasury Management
+        - 8 AML, Fraud & Compliance
+        - 9 Partner & Merchant Portal
+        - 10 Reporting & Business Intelligence
+        - 11 Mobile Applications
+        - 12 Production Go-Live
+        - 13 Pan-African Expansion
+        - Unscheduled
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - label: Requires a database migration
+        - label: Touches money movement or compliance logic
+        - label: Needs a feature flag for rollout
+        - label: Affects the public API contract (OpenAPI)

@@ -1,0 +1,237 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+  TURBO_CACHE_DIR: .turbo/cache
+  # Optional Vercel remote cache; unset secrets are harmless.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: lint
+      - name: ESLint (all workspaces)
+        run: pnpm lint
+      - name: Prettier
+        run: pnpm format:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: typecheck
+      - name: tsc --noEmit (all workspaces)
+        run: pnpm typecheck
+
+  test:
+    name: Test (unit + e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: birem
+          POSTGRES_PASSWORD: birem
+          POSTGRES_DB: birem
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U birem -d birem"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://birem:birem@localhost:5432/birem?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-ci-access-secret-0123456789abcdef
+      JWT_REFRESH_SECRET: ci-refresh-secret-ci-refresh-secret-0123456789abcdef
+      ENCRYPTION_KEY: Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo=
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_APP_NAME: BI-Rem
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: test
+      - name: Prisma generate
+        run: pnpm db:generate
+      - name: Apply migrations to the CI database
+        run: pnpm db:migrate
+      - name: Unit tests
+        run: pnpm test
+      - name: End-to-end tests
+        run: pnpm test:e2e
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            apps/*/coverage
+            packages/*/coverage
+          if-no-files-found: ignore
+          retention-days: 7
+
+  prisma:
+    name: Prisma schema & migration drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: birem
+          POSTGRES_PASSWORD: birem
+          POSTGRES_DB: birem
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U birem -d birem"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://birem:birem@localhost:5432/birem
+      SHADOW_DATABASE_URL: postgresql://birem:birem@localhost:5432/birem_shadow
+    defaults:
+      run:
+        working-directory: packages/db
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: prisma
+      - name: Create shadow database
+        run: docker exec "${{ job.services.postgres.id }}" psql -U birem -d birem -v ON_ERROR_STOP=1 -c 'CREATE DATABASE birem_shadow'
+      - name: prisma validate
+        run: pnpm exec prisma validate
+      - name: prisma format --check
+        run: pnpm exec prisma format --check
+      - name: Migrations must reproduce schema.prisma exactly
+        # Prisma 7 dropped --shadow-database-url; the shadow database comes from
+        # infra/ci/prisma.config.ts (datasource.shadowDatabaseUrl). Exit code 2 means the
+        # migrations folder and the datamodel drifted apart: someone edited schema.prisma
+        # without `prisma migrate dev --create-only`.
+        run: |
+          pnpm exec prisma migrate diff \
+            --config ../../infra/ci/prisma.config.ts \
+            --from-migrations prisma/migrations \
+            --to-schema prisma/schema.prisma \
+            --exit-code
+      - name: Migrations apply cleanly from scratch
+        run: pnpm exec prisma migrate deploy && pnpm exec prisma migrate status
+      - name: Migration lock provider is postgresql
+        run: grep -q 'provider = "postgresql"' prisma/migrations/migration_lock.toml
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_API_URL: https://api.staging.bi-rem.africa
+      NEXT_PUBLIC_APP_NAME: BI-Rem
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: build
+      - name: Build all workspaces
+        run: pnpm build
+      - name: Verify runtime contracts
+        run: |
+          test -f apps/api/dist/main.js
+          test -f apps/web/.next/standalone/apps/web/server.js
+          test -f apps/admin/.next/standalone/apps/admin/server.js
+
+  infra:
+    name: Infra lint (Dockerfiles, shell, workflows, compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: hadolint
+        # Run the pinned hadolint image directly so the file list is explicit (the action's
+        # glob handling differs between recursive and non-recursive modes).
+        # DL3018/DL3016: apk/npm versions are pinned through build args, which hadolint cannot see.
+        run: |
+          for f in infra/docker/*.Dockerfile; do
+            echo "::group::$f"
+            docker run --rm -i hadolint/hadolint:v2.12.0 hadolint \
+              --failure-threshold warning --ignore DL3018 --ignore DL3016 - < "$f"
+            echo "::endgroup::"
+          done
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./infra
+          severity: warning
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:latest -color
+      - name: docker compose config
+        run: docker compose -f infra/docker/docker-compose.yml --profile apps config --quiet
+      - name: docker build --check
+        run: |
+          for f in infra/docker/*.Dockerfile; do
+            echo "::group::$f"
+            docker build --check -f "$f" .
+            echo "::endgroup::"
+          done
+      - name: terraform fmt
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: terraform fmt -check -diff -recursive infra/terraform
+
+  ci-ok:
+    # Single required status check for branch protection: "CI / ci-ok".
+    name: ci-ok
+    if: always()
+    needs: [lint, typecheck, test, prisma, build, infra]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate upstream jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e 'to_entries | map(select(.value.result != "success")) | length > 0' >/dev/null; then
+            echo "::error::One or more CI jobs did not succeed"
+            exit 1
+          fi

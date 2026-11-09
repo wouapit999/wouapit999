@@ -1,0 +1,85 @@
+# Fly.io configuration for the BI-Rem API.
+#
+# One file, several apps: the deploy workflow passes `--app bi-rem-api-staging` or
+# `--app bi-rem-api` (production) and `--image` pointing at the digest built by CI, so the
+# `app` value below is only a default for manual `fly deploy` runs.
+#
+# Regions: cdg (Paris) is the primary because the Neon project lives in eu-central-1 and the
+# first customer markets are reachable with acceptable latency. jnb (Johannesburg) is the
+# documented alternative for a South-Africa-first rollout: `fly regions set jnb` plus a Neon
+# project in a nearby region (see README.md).
+
+app = "bi-rem-api-staging"
+primary_region = "cdg"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+swap_size_mb = 256
+
+[build]
+  # Built in CI (infra/docker/api.Dockerfile) and passed with `fly deploy --image ...`.
+  # Uncomment for `fly deploy` straight from a checkout:
+  # dockerfile = "../docker/api.Dockerfile"
+
+[deploy]
+  # Runs in a throw-away machine with the production secrets before the new release is rolled
+  # out. The image entrypoint maps `migrate` to `prisma migrate deploy`.
+  release_command = "migrate"
+  strategy = "rolling"
+  max_unavailable = 0.33
+  wait_timeout = "5m"
+
+[env]
+  NODE_ENV = "production"
+  API_PORT = "4000"
+  LOG_LEVEL = "info"
+  RUN_MIGRATIONS = "false"
+  # Non-secret configuration. Secrets (DATABASE_URL, DIRECT_URL, REDIS_URL, JWT_*,
+  # ENCRYPTION_KEY, SMTP_*, SENTRY_DSN) are set with `fly secrets set` — never here.
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 2
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health/ready"
+    protocol = "http"
+    tls_skip_verify = false
+    [http_service.checks.headers]
+      Accept = "application/json"
+
+[checks]
+  [checks.live]
+    type = "http"
+    port = 4000
+    grace_period = "15s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health/live"
+
+[metrics]
+  port = 4000
+  path = "/metrics"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
+  processes = ["app"]
+
+[[restart]]
+  policy = "on-failure"
+  retries = 5
+  processes = ["app"]

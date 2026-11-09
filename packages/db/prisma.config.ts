@@ -10,11 +10,15 @@ import { defineConfig } from 'prisma/config';
  * - `DIRECT_URL` (Neon direct, non-pooled endpoint) is preferred for migrate/introspection
  *   commands when set; otherwise `DATABASE_URL` is used. The pooled `DATABASE_POOL_URL`
  *   is only ever used by the API at runtime, never by the CLI.
- * - When neither variable is set the datasource block is omitted so that commands which
- *   never touch a database (validate, format, generate, migrate diff --from-empty) still
- *   run, while migrate/db commands fail fast with Prisma's own "datasource url missing" error.
+ * - The schema engine needs a datasource URL even for commands that never connect
+ *   (`migrate diff --from-empty`, `validate`, `generate`). When neither variable is set we
+ *   fall back to a deliberately unresolvable host so offline commands work, while any
+ *   command that really connects fails fast with an obvious "missing-database-url" error.
  */
-const databaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+const OFFLINE_PLACEHOLDER_URL =
+  'postgresql://missing:missing@missing-database-url.invalid:5432/birem';
+
+const databaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? OFFLINE_PLACEHOLDER_URL;
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
@@ -22,5 +26,7 @@ export default defineConfig({
     path: 'prisma/migrations',
     seed: 'tsx prisma/seed.ts',
   },
-  ...(databaseUrl ? { datasource: { url: databaseUrl } } : {}),
+  datasource: {
+    url: databaseUrl,
+  },
 });

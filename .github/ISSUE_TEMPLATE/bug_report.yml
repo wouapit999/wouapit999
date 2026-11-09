@@ -1,0 +1,60 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+title: 'bug(<scope>): '
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Do not include real customer data, secrets or tokens.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - apps/api
+        - apps/web (customer portal)
+        - apps/admin (admin portal)
+        - packages/db
+        - packages/shared
+        - infra / CI
+        - docs
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options: [local, preview, staging, production]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Expected vs actual behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. POST /v1/auth/login with ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: request-id
+    attributes:
+      label: Correlation id (x-request-id)
+      description: Found in the API response headers / logs; lets us find the audit and log entries.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: v0.3.1 or git sha

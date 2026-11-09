@@ -1,0 +1,67 @@
+name: Phase task
+description: A unit of work from a phase plan (docs/phases/phase-NN-<key>.md)
+title: 'phase-NN: <task>'
+labels: [phase-task]
+body:
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - phase-01-foundation
+        - phase-02-customer-kyc
+        - phase-03-connectivity
+        - phase-04-wallet-connectors
+        - phase-05-domestic-transfers
+        - phase-06-international
+        - phase-07-fx-treasury
+        - phase-08-aml-compliance
+        - phase-09-partner-merchant
+        - phase-10-reporting-bi
+        - phase-11-mobile
+        - phase-12-go-live
+        - phase-13-pan-african-expansion
+    validations:
+      required: true
+  - type: input
+    id: plan-ref
+    attributes:
+      label: Plan reference
+      description: Section / work-package id in the phase document
+      placeholder: 'docs/phases/phase-01-foundation.md § 4.2 "Audit interceptor"'
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in and out of scope for this task.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] Tests: ...
+        - [ ] Docs: ...
+    validations:
+      required: true
+  - type: dropdown
+    id: team
+    attributes:
+      label: Owning team
+      options: [core, platform, compliance, mobile, all]
+    validations:
+      required: true
+  - type: input
+    id: estimate
+    attributes:
+      label: Estimate
+      placeholder: '3-5 days (assumes connector sandbox available)'
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies / blockers
+      placeholder: 'Depends on #12 (schema v1), provider sandbox credentials'

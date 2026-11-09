@@ -1,0 +1,26 @@
+# Code owners are requested for review automatically. Order matters: the last matching
+# pattern wins. Replace the placeholder teams once the GitHub organisation exists
+# (e.g. @bi-rem/backend, @bi-rem/frontend, @bi-rem/platform, @bi-rem/compliance).
+
+*                         @wouapit999
+
+# Backend and data layer
+/apps/api/                @wouapit999
+/packages/db/             @wouapit999
+/packages/shared/         @wouapit999
+
+# Frontends
+/apps/web/                @wouapit999
+/apps/admin/              @wouapit999
+
+# Infrastructure, CI/CD and security-sensitive files
+/infra/                   @wouapit999
+/.github/                 @wouapit999
+/.dockerignore            @wouapit999
+/SECURITY.md              @wouapit999
+/.env.example             @wouapit999
+/**/.env.example          @wouapit999
+
+# Planning documentation
+/docs/                    @wouapit999
+/CLAUDE.md                @wouapit999

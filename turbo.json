@@ -9,28 +9,40 @@
       "outputs": ["generated/**"]
     },
     "build": {
-      "dependsOn": ["^build", "^generate"],
+      "dependsOn": ["^build", "^generate", "generate"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
       "env": ["DATABASE_URL", "NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_APP_NAME"]
     },
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["^generate"]
+      "dependsOn": ["^build", "^generate", "generate"]
     },
     "lint": {
-      "dependsOn": ["^generate"]
+      "dependsOn": ["^build", "^generate", "generate"]
     },
     "typecheck": {
-      "dependsOn": ["^build", "^generate"]
+      "dependsOn": ["^build", "^generate", "generate"]
     },
     "test": {
-      "dependsOn": ["^generate"],
+      "dependsOn": ["^build", "^generate", "generate"],
       "outputs": ["coverage/**"]
     },
     "test:e2e": {
       "dependsOn": ["build"],
       "cache": false
+    },
+    "seed": {
+      "cache": false,
+      "dependsOn": ["^build", "generate"],
+      "env": [
+        "DATABASE_URL",
+        "DIRECT_URL",
+        "SEED_ADMIN_EMAIL",
+        "SEED_ADMIN_PASSWORD",
+        "SEED_CUSTOMER_EMAIL",
+        "SEED_CUSTOMER_PASSWORD"
+      ]
     },
     "clean": {
       "cache": false

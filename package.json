@@ -2,7 +2,7 @@
   "name": "bi-rem",
   "version": "0.1.0",
   "private": true,
-  "description": "BI-Rem — pan-African remittance and mobile-money platform (monorepo)",
+  "description": "BI-Rem \u2014 pan-African remittance and mobile-money platform (monorepo)",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22.12.0",
@@ -18,7 +18,7 @@
     "db:generate": "pnpm --filter @bi-rem/db generate",
     "db:migrate": "pnpm --filter @bi-rem/db migrate:deploy",
     "db:migrate:dev": "pnpm --filter @bi-rem/db migrate:dev",
-    "db:seed": "pnpm --filter @bi-rem/db seed",
+    "db:seed": "turbo run seed --filter=@bi-rem/db",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "clean": "turbo run clean && rm -rf node_modules"

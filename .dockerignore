@@ -1,0 +1,33 @@
+# Keep the Docker build context small and secret-free. Dockerfiles live in infra/docker and
+# are passed with -f, so the context root is the repository root.
+.git
+.github
+docs
+infra/aws
+infra/fly
+infra/terraform
+infra/vercel
+infra/scripts
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/out
+**/*.tsbuildinfo
+**/*.log
+packages/db/generated
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+.vercel
+**/.vercel
+.idea
+.vscode
+.DS_Store
+README.md
+SECURITY.md
+CLAUDE.md
