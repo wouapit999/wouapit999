@@ -1,0 +1,382 @@
+// BI-Rem — Prisma schema v1 (Phase 1 foundation).
+//
+// Conventions (see CLAUDE.md):
+// - IDs are uuid generated in Postgres via gen_random_uuid() (pgcrypto / PG13+ built-in).
+// - All timestamps are timestamptz(6).
+// - Tables and columns are snake_case via @@map / @map; Prisma models stay PascalCase/camelCase.
+// - The datasource URL is configured in ../prisma.config.ts (Prisma 7).
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../generated/client"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRealm {
+  CUSTOMER
+  ADMIN
+
+  @@map("user_realm")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  LOCKED
+  DELETED
+
+  @@map("user_status")
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  API_KEY
+
+  @@map("audit_actor_type")
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+
+  @@map("audit_outcome")
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  IN_APP
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
+
+  @@map("notification_status")
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+
+  @@map("outbox_status")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+/// A person or service identity. Two realms (CUSTOMER / ADMIN) share this table and are
+/// discriminated by `realm`; e-mail uniqueness is scoped per realm.
+model User {
+  id                  String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  realm               UserRealm
+  email               String     @db.Citext
+  phone               String?    @unique @db.VarChar(32)
+  passwordHash        String     @map("password_hash")
+  status              UserStatus @default(PENDING)
+  firstName           String     @map("first_name") @db.VarChar(100)
+  lastName            String     @map("last_name") @db.VarChar(100)
+  locale              String     @default("en") @db.VarChar(10)
+  /// ISO-3166-1 alpha-2 (e.g. "SN", "CI", "NG").
+  countryCode         String     @map("country_code") @db.Char(2)
+  mfaEnabled          Boolean    @default(false) @map("mfa_enabled")
+  /// TOTP secret encrypted at the application layer with ENCRYPTION_KEY; never plaintext.
+  mfaSecret           String?    @map("mfa_secret")
+  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)
+  emailVerifiedAt     DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  phoneVerifiedAt     DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Soft delete marker. Rows are never hard-deleted from the application.
+  deletedAt           DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  roles                   UserRole[]
+  refreshTokens           RefreshToken[]
+  auditLogs               AuditLog[]               @relation("AuditLogActor")
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  apiKeysCreated          ApiKey[]                 @relation("ApiKeyCreatedBy")
+  roleAssignmentsMade     UserRole[]               @relation("UserRoleAssignedBy")
+
+  @@unique([realm, email])
+  @@index([status])
+  @@index([realm, status])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(64)
+  description String?
+  /// System roles are seeded and cannot be deleted or renamed from the admin UI.
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+/// Permission keys follow the `resource:action` convention (e.g. `users:read`).
+model Permission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique @db.VarChar(128)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId       String   @map("user_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  assignedById String?  @map("assigned_by_id") @db.Uuid
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy User? @relation("UserRoleAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+/// Opaque refresh tokens are stored hashed (SHA-256). Rotation links the successor token
+/// through `replacedByTokenId` so reuse of a rotated token can be detected.
+model RefreshToken {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.VarChar(128)
+  userId            String    @map("user_id") @db.Uuid
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedByTokenId String?   @unique @map("replaced_by_token_id") @db.Uuid
+  ip                String?   @db.VarChar(45)
+  userAgent         String?   @map("user_agent") @db.VarChar(512)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken? @relation("RefreshTokenRotation", fields: [replacedByTokenId], references: [id], onDelete: SetNull)
+  replaces   RefreshToken? @relation("RefreshTokenRotation")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Admin service-account credentials. Only the hash is stored; `prefix` is the first
+/// characters of the raw key so operators can identify a key without revealing it.
+model ApiKey {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String    @db.VarChar(100)
+  keyHash     String    @unique @map("key_hash") @db.VarChar(128)
+  prefix      String    @db.VarChar(16)
+  /// Permission keys granted to this key (subset of the permissions catalogue).
+  scopes      String[]  @default([])
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User @relation("ApiKeyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([prefix])
+  @@index([createdById])
+  @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Append-only record of every mutating request (written by the API audit interceptor).
+model AuditLog {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId   String?        @map("actor_user_id") @db.Uuid
+  actorType     AuditActorType @default(USER) @map("actor_type")
+  action        String         @db.VarChar(128)
+  resourceType  String         @map("resource_type") @db.VarChar(64)
+  resourceId    String?        @map("resource_id") @db.VarChar(128)
+  outcome       AuditOutcome
+  before        Json?
+  after         Json?
+  metadata      Json?
+  ip            String?        @db.VarChar(45)
+  userAgent     String?        @map("user_agent") @db.VarChar(512)
+  correlationId String?        @map("correlation_id") @db.VarChar(128)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actorUser User? @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([resourceType, resourceId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@index([correlationId])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String              @map("user_id") @db.Uuid
+  channel     NotificationChannel
+  templateKey String              @map("template_key") @db.VarChar(64)
+  /// E-mail address, E.164 phone number or push token the message was/will be sent to.
+  recipient   String              @db.VarChar(320)
+  payload     Json
+  status      NotificationStatus  @default(PENDING)
+  attempts    Int                 @default(0)
+  lastError   String?             @map("last_error")
+  sentAt      DateTime?           @map("sent_at") @db.Timestamptz(6)
+  deliveredAt DateTime?           @map("delivered_at") @db.Timestamptz(6)
+  /// Only meaningful for IN_APP notifications.
+  readAt      DateTime?           @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([templateKey])
+  @@map("notifications")
+}
+
+/// Localised message template. `body` uses `{{variable}}` placeholders listed in `variables`.
+model NotificationTemplate {
+  id        String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String              @db.VarChar(64)
+  channel   NotificationChannel
+  /// BCP-47 language tag, lower-case (en, fr, pt).
+  locale    String              @db.VarChar(10)
+  /// Required for EMAIL / PUSH, ignored for SMS.
+  subject   String?             @db.VarChar(255)
+  body      String
+  /// JSON array of placeholder names the body expects.
+  variables Json                @default("[]")
+  isActive  Boolean             @default(true) @map("is_active")
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([key, channel, locale])
+  @@map("notification_templates")
+}
+
+model NotificationPreference {
+  id        String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String              @map("user_id") @db.Uuid
+  channel   NotificationChannel
+  enabled   Boolean             @default(true)
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel])
+  @@map("notification_preferences")
+}
+
+// ---------------------------------------------------------------------------
+// Platform configuration
+// ---------------------------------------------------------------------------
+
+model FeatureFlag {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key               String   @unique @db.VarChar(64)
+  enabled           Boolean  @default(false)
+  /// 0-100; applied to a stable hash of the user id when `enabled` is true.
+  rolloutPercentage Int      @default(100) @map("rollout_percentage")
+  /// Targeting rules (JSON array), evaluated by the feature-flag service.
+  rules             Json     @default("[]")
+  description       String?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("feature_flags")
+}
+
+/// Runtime settings editable from the admin portal. Secret values are encrypted at the
+/// application layer and redacted from API responses when `isSecret` is true.
+model Setting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique @db.VarChar(128)
+  value       Json
+  isSecret    Boolean  @default(false) @map("is_secret")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("settings")
+}
+
+// ---------------------------------------------------------------------------
+// Transactional outbox
+// ---------------------------------------------------------------------------
+
+/// Events written in the same transaction as the business change and relayed to the
+/// message broker by a poller (at-least-once delivery).
+model Outbox {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aggregateType String       @map("aggregate_type") @db.VarChar(64)
+  aggregateId   String       @map("aggregate_id") @db.VarChar(128)
+  eventType     String       @map("event_type") @db.VarChar(128)
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  lastError     String?      @map("last_error")
+  publishedAt   DateTime?    @map("published_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox")
+}
