@@ -243,7 +243,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
                   label: `${corridor.sourceCountry} → ${corridor.targetCountry} (${corridor.sourceCurrency}/${corridor.targetCurrency})`,
                   value: Number(corridor.fxMarginUsd),
                   display: usd(corridor.fxMarginUsd),
-                  hint: `${corridor.count} transfers`,
+                  hint: `${corridor.count} transfer${corridor.count === 1 ? '' : 's'}`,
                 }))}
             />
           </CardBody>

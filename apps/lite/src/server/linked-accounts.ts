@@ -5,6 +5,7 @@ import { getConnectorForProvider } from './connectors/registry';
 import { db } from './db';
 import { AppError } from './errors';
 import { priceTransfer } from './fx';
+import { assertCashInWithinLimits } from './kyc/limits';
 import { type ActionContext, requireUserActor } from './rbac';
 import { getWallet, ownsWallet } from './wallets';
 
@@ -334,6 +335,22 @@ export async function previewTopUp(
   if (pricing.feeAmount >= input.amount) {
     throw new AppError('VALIDATION', 'Amount is too small', {
       fieldErrors: { amount: ['This amount does not cover the top-up fee'] },
+    });
+  }
+  // Same cash-in limits `topUpWallet` enforces under a lock when the customer confirms.
+  if (wallet.partnerId) {
+    await assertCashInWithinLimits(db, {
+      owner: { partnerId: wallet.partnerId },
+      amountUsd: pricing.sendAmountUsd,
+    });
+  } else if (wallet.userId) {
+    const owner = await db.user.findUniqueOrThrow({
+      where: { id: wallet.userId },
+      select: { kycTier: true },
+    });
+    await assertCashInWithinLimits(db, {
+      owner: { userId: wallet.userId, tier: owner.kycTier },
+      amountUsd: pricing.sendAmountUsd,
     });
   }
   return {

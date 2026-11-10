@@ -26,7 +26,11 @@ export function TransactionsTable({
 }: {
   items: readonly TransferListItem[];
   caption: string;
-  /** Dashboard variant: relative dates, no fee column. */
+  /**
+   * Dashboard variant: relative dates, no fee column, and the status under the amount rather
+   * than in a column of its own — the table sits in a two-thirds-width card and must show its
+   * outcome without horizontal scrolling.
+   */
   compact?: boolean;
 }) {
   return (
@@ -39,7 +43,7 @@ export function TransactionsTable({
           <Th>Counterparty</Th>
           <Th align="right">Amount</Th>
           {compact ? null : <Th align="right">Fee</Th>}
-          <Th>Status</Th>
+          {compact ? null : <Th>Status</Th>}
         </Tr>
       </THead>
       <TBody>
@@ -88,6 +92,11 @@ export function TransactionsTable({
                   // Failed / rejected / reversed: the money went back, so no sign and no colour.
                   <Money amount={item.amount} currency={item.currency} className="text-fg-muted" />
                 )}
+                {compact ? (
+                  <span className="mt-1 block">
+                    <StatusBadge status={item.status} />
+                  </span>
+                ) : null}
               </Td>
               {compact ? null : (
                 <Td align="right" className="text-fg-muted">
@@ -102,9 +111,11 @@ export function TransactionsTable({
                   )}
                 </Td>
               )}
-              <Td>
-                <StatusBadge status={item.status} />
-              </Td>
+              {compact ? null : (
+                <Td>
+                  <StatusBadge status={item.status} />
+                </Td>
+              )}
             </Tr>
           );
         })}

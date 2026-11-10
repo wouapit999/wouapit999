@@ -8,34 +8,101 @@ import pg from 'pg';
  * template database (migrated + reference data) and every test file clones it, so runs and files
  * never share state and can execute in parallel — also alongside other people's runs.
  *
- * Connection: `TEST_DATABASE_ADMIN_URL`, else the local dev default
- * (`postgresql://birem:birem@localhost:5432/postgres`). The role must be allowed to CREATE
- * DATABASE; the database part of the URL is ignored.
+ * Which server: the first of `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`, `DATABASE_URL`,
+ * else the local development default (`postgresql://birem:birem@localhost:5432/postgres`). The
+ * URL only locates the server and the role: the suite creates and drops databases of its own
+ * (`birem_lite_t_…`) and never reads or writes the database the URL names. The role must be
+ * allowed to CREATE DATABASE.
  */
 
-const DEFAULT_ADMIN_URL = 'postgresql://birem:birem@localhost:5432/postgres';
+export const DEFAULT_ADMIN_URL = 'postgresql://birem:birem@localhost:5432/postgres';
 
-export function adminUrl(): string {
-  return process.env.TEST_DATABASE_ADMIN_URL ?? DEFAULT_ADMIN_URL;
+/** Marker of the placeholder `DATABASE_URL` that `./setup.ts` gives unit tests. */
+export const PLACEHOLDER_DATABASE = 'unit-tests';
+
+const CONFIGURABLE = ['TEST_DATABASE_ADMIN_URL', 'TEST_DATABASE_URL', 'DATABASE_URL'] as const;
+
+export interface AdminUrlSource {
+  readonly url: string;
+  /** The environment variable the URL came from; `null` for the built-in local default. */
+  readonly variable: (typeof CONFIGURABLE)[number] | null;
 }
 
+/** Where the test databases live, and which setting said so. */
+export function adminUrlSource(
+  env: Record<string, string | undefined> = process.env,
+): AdminUrlSource {
+  for (const variable of CONFIGURABLE) {
+    const value = env[variable]?.trim();
+    if (!value || value.endsWith(`/${PLACEHOLDER_DATABASE}`)) continue;
+    return { url: value, variable };
+  }
+  return { url: DEFAULT_ADMIN_URL, variable: null };
+}
+
+export function adminUrl(): string {
+  return adminUrlSource().url;
+}
+
+/** Same server, role and connection options (`sslmode`…) as the admin URL, other database. */
 export function urlForDatabase(name: string): string {
   const url = new URL(adminUrl());
   url.pathname = `/${name}`;
-  url.search = '';
   return url.toString();
+}
+
+/** `host:port` of the admin URL, for messages (never the credentials). */
+export function describeServer(url: string = adminUrl()): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}:${parsed.port || '5432'}`;
+  } catch {
+    return 'an unparsable URL';
+  }
 }
 
 async function withAdmin<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
   const url = new URL(adminUrl());
-  url.pathname = '/postgres';
-  url.search = '';
-  const client = new pg.Client({ connectionString: url.toString() });
+  // Administrative statements run from the database the URL names (any database will do).
+  if (url.pathname === '' || url.pathname === '/') url.pathname = '/postgres';
+  const client = new pg.Client({
+    connectionString: url.toString(),
+    connectionTimeoutMillis: 5_000,
+  });
   await client.connect();
   try {
     return await fn(client);
   } finally {
     await client.end();
+  }
+}
+
+export type DatabaseProbe = { available: true } | { available: false; reason: string };
+
+/**
+ * Can the test suite use this server? Connects and checks that the role may create databases.
+ * Never throws: an unreachable server is an answer, not an error.
+ */
+export async function probeTestDatabaseServer(): Promise<DatabaseProbe> {
+  try {
+    return await withAdmin(async (client) => {
+      const result = await client.query<{ can_create: boolean }>(
+        'SELECT (rolcreatedb OR rolsuper) AS can_create FROM pg_roles WHERE rolname = current_user',
+      );
+      return result.rows[0]?.can_create
+        ? { available: true as const }
+        : { available: false as const, reason: 'the role is not allowed to CREATE DATABASE' };
+    });
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    return {
+      available: false,
+      reason:
+        typeof code === 'string'
+          ? `${code}${message ? ` — ${message}` : ''}`
+          : message || 'no answer',
+    };
   }
 }
 

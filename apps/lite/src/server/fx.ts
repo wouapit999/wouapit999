@@ -8,7 +8,9 @@ import { AppError } from './errors';
 import { TRANSFER_TYPES, quoteFee } from './fees';
 import {
   RATE_SCALE,
+  MAX_AMOUNT_MINOR,
   applyMargin,
+  assertAmountInRange,
   bpsOf,
   convertAmount,
   currencyInfo,
@@ -179,7 +181,7 @@ export interface Pricing extends PricingInput {
 
 /** Prices a transfer at current rates and fee rules. Pure read; nothing is stored. */
 export async function priceTransfer(client: DbOrTx, input: PricingInput): Promise<Pricing> {
-  if (input.sendAmount <= 0n) throw new AppError('VALIDATION', 'Amount must be greater than zero');
+  assertAmountInRange(input.sendAmount);
   const { fee, ruleId } = await quoteFee(
     client,
     {
@@ -236,7 +238,7 @@ export const quoteSchema = z.object({
   targetCountry: z.string().length(2),
   sourceCurrency: z.string().refine(isCurrencyCode, 'Unsupported currency'),
   targetCurrency: z.string().refine(isCurrencyCode, 'Unsupported currency'),
-  sendAmount: z.bigint().positive(),
+  sendAmount: z.bigint().positive().max(MAX_AMOUNT_MINOR, 'Amount is too large'),
 });
 export type QuoteInput = PricingInput;
 

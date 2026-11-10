@@ -51,7 +51,7 @@ jobs:
         run: pnpm typecheck
 
   test:
-    name: Test (unit + e2e)
+    name: Test (unit + e2e, Phase 1 workspaces)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -93,12 +93,12 @@ jobs:
         run: pnpm db:generate
       - name: Apply migrations to the CI database
         run: pnpm db:migrate
+      # BI-Rem Lite is self-contained (own schema, own database, own secrets): its tests and
+      # end-to-end suite run in the dedicated "lite" job below, not with this job's environment.
       - name: Unit tests
-        run: pnpm test
-      - name: Install Chromium for the BI-Rem Lite end-to-end suite
-        run: pnpm --filter @bi-rem/lite exec playwright install --with-deps chromium
+        run: pnpm exec turbo run test --filter='!@bi-rem/lite'
       - name: End-to-end tests
-        run: pnpm test:e2e
+        run: pnpm exec turbo run test:e2e --filter='!@bi-rem/lite'
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -107,14 +107,108 @@ jobs:
           path: |
             apps/*/coverage
             packages/*/coverage
+            !apps/lite/coverage
           if-no-files-found: ignore
           retention-days: 7
-      - name: Upload BI-Rem Lite end-to-end traces
-        if: failure()
+
+  lite:
+    # BI-Rem Lite (apps/lite): the same steps a Vercel deployment runs, then every check, on
+    # PostgreSQL 16 (what a new Neon project runs). Deployment itself is done by Vercel's Git
+    # integration on push — see apps/lite/DEPLOY.md; there is deliberately no deploy workflow.
+    name: BI-Rem Lite (deploy rehearsal, lint, typecheck, test, build, e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: birem
+          POSTGRES_PASSWORD: birem
+          POSTGRES_DB: birem_lite
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U birem -d birem_lite"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # The database a deployment would use. Vitest and Playwright never touch it: they create
+      # and drop their own databases through TEST_DATABASE_ADMIN_URL.
+      DATABASE_URL: postgresql://birem:birem@localhost:5432/birem_lite
+      DATABASE_URL_UNPOOLED: postgresql://birem:birem@localhost:5432/birem_lite
+      TEST_DATABASE_ADMIN_URL: postgresql://birem:birem@localhost:5432/postgres
+      # `pnpm test` skips the database-backed suites when no server is reachable; here that
+      # must be a failure, never a green run.
+      REQUIRE_TEST_DATABASE: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          install: 'false'
+          turbo-cache-key: lite
+      - name: Install exactly what Vercel installs (apps/lite/vercel.json installCommand)
+        working-directory: apps/lite
+        # The literal command is repeated here so that a change to vercel.json fails this job
+        # until the rehearsal below is updated with it.
+        run: |
+          test "$(node -p "require('./vercel.json').installCommand")" = "pnpm install --frozen-lockfile --filter @bi-rem/lite..."
+          test "$(node -p "require('./vercel.json').buildCommand")" = "pnpm run vercel-build"
+          pnpm install --frozen-lockfile --filter @bi-rem/lite...
+      - name: Prisma validate and generate
+        run: |
+          pnpm --filter @bi-rem/lite exec prisma validate
+          pnpm --filter @bi-rem/lite generate
+      - name: Apply migrations to an empty database (prisma migrate deploy)
+        run: |
+          pnpm --filter @bi-rem/lite migrate:deploy
+          pnpm --filter @bi-rem/lite exec prisma migrate status
+      - name: Lint
+        run: pnpm --filter @bi-rem/lite lint
+      - name: Typecheck
+        run: pnpm --filter @bi-rem/lite typecheck
+      - name: Unit and integration tests (vitest, real PostgreSQL)
+        run: pnpm --filter @bi-rem/lite test
+      - name: Rehearse the Vercel build as a production deployment (vercel-build)
+        # sync-roadmap -> prisma generate -> prisma migrate deploy -> seed -> next build, with
+        # throw-away secrets generated the way DEPLOY.md tells an operator to generate them.
+        env:
+          VERCEL: '1'
+          VERCEL_ENV: production
+          SEED_ADMIN_EMAIL: ci-admin@example.com
+          SEED_DEMO_DATA: 'true'
+        run: |
+          AUTH_SECRET="$(openssl rand -base64 48)"
+          ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          SEED_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+          export AUTH_SECRET ENCRYPTION_KEY SEED_ADMIN_PASSWORD
+          pnpm --filter @bi-rem/lite run vercel-build
+          echo "::group::Second deploy on the same database: nothing to migrate, seed is a no-op"
+          pnpm --filter @bi-rem/lite migrate:deploy
+          pnpm --filter @bi-rem/lite seed
+          echo "::endgroup::"
+      - name: Serverless bundle carries the Prisma client and its query compiler
+        # Vercel packages each function from Next's file trace. If the generated client's
+        # runtime is missing from it, every database call fails at run time, not at build time.
+        run: |
+          trace=apps/lite/.next/server/app/api/health/route.js.nft.json
+          test -f "$trace"
+          grep -q '@prisma/client/runtime/client' "$trace"
+          grep -q 'query_compiler.*postgresql' "$trace"
+          grep -q '/pg/lib/' "$trace"
+      - name: Install Chromium (CI only; developer machines keep their own browser)
+        run: pnpm --filter @bi-rem/lite exec playwright install --with-deps chromium
+      - name: End-to-end tests (Playwright, against the build made above)
+        env:
+          E2E_SKIP_BUILD: '1'
+        run: pnpm --filter @bi-rem/lite test:e2e
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lite-e2e-traces
-          path: apps/lite/test-results
+          name: lite-test-results
+          path: |
+            apps/lite/coverage
+            apps/lite/test-results
           if-no-files-found: ignore
           retention-days: 7
 
@@ -257,7 +351,7 @@ jobs:
     # Single required status check for branch protection: "CI / ci-ok".
     name: ci-ok
     if: always()
-    needs: [lint, typecheck, test, prisma, build, infra, docs-check]
+    needs: [lint, typecheck, test, lite, prisma, build, infra, docs-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

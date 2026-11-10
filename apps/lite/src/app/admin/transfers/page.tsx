@@ -220,7 +220,7 @@ export default async function TransfersPage({ searchParams }: { searchParams: Se
                         }
                       />
                     </Td>
-                    <Td className="whitespace-nowrap">{formatDateTime(transfer.createdAt)}</Td>
+                    <Td className="text-fg-muted">{formatDateTime(transfer.createdAt)}</Td>
                   </Tr>
                 ))}
               </TBody>

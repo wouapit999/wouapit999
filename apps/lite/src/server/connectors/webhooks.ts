@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import { z } from 'zod';
 
 import { WEBHOOK_SIGNATURE_HEADER, verifyWebhookSignature } from '../crypto';
 import { db } from '../db';
-import { AppError, isUniqueViolation } from '../errors';
+import { AppError } from '../errors';
 import { RATE_LIMITS, hitRateLimit } from '../rate-limit';
 import { type ActionContext, assertPermission } from '../rbac';
 import { applyProviderOutcome } from '../transfers/engine';
@@ -55,25 +57,33 @@ export async function handleProviderWebhook(input: {
   });
   if (!provider) throw new AppError('NOT_FOUND', 'Unknown provider');
 
+  // Authenticate first. Unsigned or badly signed calls are throttled in their own bucket, so a
+  // flood of forged requests can never use up the allowance of the provider's real webhooks.
+  const reject = async (message: string): Promise<never> => {
+    const rejected = await hitRateLimit(
+      `webhook:rejected:${provider.id}`,
+      RATE_LIMITS.webhookPerProvider,
+      now,
+    );
+    if (!rejected.allowed) throw new AppError('RATE_LIMITED', 'Too many webhook calls');
+    throw new AppError('UNAUTHENTICATED', message);
+  };
+  const secrets =
+    provider.webhookSecretVersion > 0 ? await loadWebhookSecrets(provider.id, now) : [];
+  if (secrets.length === 0) {
+    return reject('No webhook secret is configured for this provider');
+  }
+  const verification = verifyWebhookSignature(secrets, input.rawBody, input.signature, { now });
+  if (!verification.ok) {
+    return reject(`Webhook signature rejected (${verification.reason.toLowerCase()})`);
+  }
+
   const limit = await hitRateLimit(
     `webhook:provider:${provider.id}`,
     RATE_LIMITS.webhookPerProvider,
     now,
   );
   if (!limit.allowed) throw new AppError('RATE_LIMITED', 'Too many webhook calls');
-
-  const secrets =
-    provider.webhookSecretVersion > 0 ? await loadWebhookSecrets(provider.id, now) : [];
-  if (secrets.length === 0) {
-    throw new AppError('UNAUTHENTICATED', 'No webhook secret is configured for this provider');
-  }
-  const verification = verifyWebhookSignature(secrets, input.rawBody, input.signature, { now });
-  if (!verification.ok) {
-    throw new AppError(
-      'UNAUTHENTICATED',
-      `Webhook signature rejected (${verification.reason.toLowerCase()})`,
-    );
-  }
 
   let json: unknown;
   try {
@@ -85,23 +95,40 @@ export async function handleProviderWebhook(input: {
   if (!parsed.success) throw new AppError('VALIDATION', 'Unexpected webhook payload');
   const payload = parsed.data;
 
-  // Replay protection: the insert fails on a duplicate (provider, eventId).
-  let eventRowId: string;
-  try {
-    const event = await db.providerWebhookEvent.create({
-      data: {
+  // Replay protection: `(provider, eventId)` is unique. The insert uses ON CONFLICT DO NOTHING,
+  // so a replay is an ordinary zero-row result rather than a failed statement in the logs.
+  let eventRowId: string = randomUUID();
+  const inserted = await db.providerWebhookEvent.createMany({
+    data: [
+      {
+        id: eventRowId,
         providerId: provider.id,
         eventId: payload.eventId,
         eventType: payload.type,
         payload,
         receivedAt: now,
       },
-      select: { id: true },
+    ],
+    skipDuplicates: true,
+  });
+  if (inserted.count === 0) {
+    // A redelivery. If the first attempt FAILED on our side (the provider got a 5xx and is
+    // retrying), claim the event again — atomically, so two retries cannot both process it.
+    // Anything already processed, ignored or still in progress stays a duplicate.
+    const where = { providerId_eventId: { providerId: provider.id, eventId: payload.eventId } };
+    const reclaimed = await db.providerWebhookEvent.updateMany({
+      where: { providerId: provider.id, eventId: payload.eventId, status: 'FAILED' },
+      data: {
+        status: 'RECEIVED',
+        error: null,
+        payload,
+        eventType: payload.type,
+        processedAt: null,
+      },
     });
-    eventRowId = event.id;
-  } catch (error) {
-    if (isUniqueViolation(error)) return { outcome: 'DUPLICATE' };
-    throw error;
+    if (reclaimed.count === 0) return { outcome: 'DUPLICATE' };
+    eventRowId = (await db.providerWebhookEvent.findUniqueOrThrow({ where, select: { id: true } }))
+      .id;
   }
 
   const finish = async (

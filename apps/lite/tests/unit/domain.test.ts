@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { jaroWinkler, nameSimilarity, normalizeName } from '@/server/aml/names';
+import { withExplicitSslMode } from '@/server/db';
 import { riskLevelForScore } from '@/server/aml/engine';
 import { toAuditJson } from '@/server/audit';
 import {
@@ -173,6 +174,17 @@ describe('name matching', () => {
     expect(nameSimilarity('Viktor', 'Viktor Demo Sanctionov')).toBeLessThan(88);
     expect(nameSimilarity('Amina Njoya', 'Paula Exemplo Governadora')).toBeLessThan(70);
     expect(nameSimilarity('', 'Someone')).toBe(0);
+    // Regression: a shared first name (or its prefix) must not pull two different people over
+    // the threshold — the seeded customer "Paul Ondo" used to match this PEP alias at 89.
+    expect(nameSimilarity('Paul Ondo', 'Paula E. Governadora')).toBeLessThan(75);
+    expect(nameSimilarity('Paul Ondo', 'Paula Exemplo Governadora')).toBeLessThan(75);
+    expect(nameSimilarity('Joao Silva', 'Joao Santos')).toBeLessThan(75);
+    expect(nameSimilarity('Paul', 'Paul Ondo')).toBeLessThan(75);
+    // …while a dropped middle name or a typo in one token still matches.
+    expect(nameSimilarity('Paula Governadora', 'Paula Exemplo Governadora')).toBeGreaterThanOrEqual(
+      88,
+    );
+    expect(nameSimilarity('Paul Onda', 'Paul Ondo')).toBeGreaterThanOrEqual(88);
     expect(jaroWinkler('martha', 'marhta')).toBeCloseTo(0.9611, 3);
     expect(jaroWinkler('abc', 'xyz')).toBe(0);
   });
@@ -430,6 +442,28 @@ describe('exports', () => {
     const pdf = await toPdf(odd);
     expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe('%PDF-');
     expect(pdfSafe('a\u202fb → “c” – d… ₦ é')).toBe('a b -> "c" - d... ? é');
+  });
+});
+
+describe('database connection string', () => {
+  it("makes pg's TLS mode explicit without weakening it", () => {
+    // Neon's URLs say sslmode=require; pg 8 verifies the certificate for it and warns that pg 9
+    // will not. verify-full pins today's strict behaviour.
+    expect(
+      withExplicitSslMode('postgresql://u:p@ep-x-pooler.eu.aws.neon.tech/db?sslmode=require'),
+    ).toBe('postgresql://u:p@ep-x-pooler.eu.aws.neon.tech/db?sslmode=verify-full');
+    expect(
+      withExplicitSslMode('postgresql://u:p@h/db?sslmode=prefer&channel_binding=require'),
+    ).toBe('postgresql://u:p@h/db?sslmode=verify-full&channel_binding=require');
+    for (const untouched of [
+      'postgresql://birem:birem@localhost:5432/birem_lite',
+      'postgresql://u:p@h/db?sslmode=verify-full',
+      'postgresql://u:p@h/db?sslmode=disable',
+      'postgresql://u:p@h/db?uselibpqcompat=true&sslmode=require',
+      'not a url',
+    ]) {
+      expect(withExplicitSslMode(untouched)).toBe(untouched);
+    }
   });
 });
 

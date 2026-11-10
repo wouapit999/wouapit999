@@ -21,7 +21,7 @@ import { randomCode } from '../crypto';
 import { type Prisma, type Tx, db, withTransaction } from '../db';
 import { AppError, isUniqueViolation } from '../errors';
 import { type Pricing, consumeQuote, createQuote, priceTransfer } from '../fx';
-import { assertWithinLimits } from '../kyc/limits';
+import { type CashInOwner, assertCashInWithinLimits, assertWithinLimits } from '../kyc/limits';
 import {
   type PostingLine,
   getSystemAccountIds,
@@ -29,7 +29,7 @@ import {
   postJournal,
   reverseJournal,
 } from '../ledger';
-import { bpsOf, formatMoney, rateToDecimalString } from '../money';
+import { MAX_AMOUNT_MINOR, bpsOf, formatMoney, rateToDecimalString } from '../money';
 import { notify } from '../notifications';
 import { type PartnerEventType, dispatchPartnerEvent } from '../partners/webhooks';
 import {
@@ -114,7 +114,7 @@ export const createTransferSchema = z.object({
   senderWalletId: z.uuid(),
   recipient: recipientSchema,
   /** Send amount in minor units of the sender wallet's currency. Optional with `quoteId`. */
-  amount: z.bigint().positive().optional(),
+  amount: z.bigint().positive().max(MAX_AMOUNT_MINOR, 'Amount is too large').optional(),
   /** A quote from `quoteTransfer` — locks the FX rate and fee shown to the customer. */
   quoteId: z.uuid().optional(),
   idempotencyKey: idempotencyKeySchema,
@@ -1272,7 +1272,7 @@ export const topUpSchema = z.object({
   walletId: z.uuid(),
   providerId: z.uuid(),
   accountNumber: z.string().trim().min(8).max(20),
-  amount: z.bigint().positive(),
+  amount: z.bigint().positive().max(MAX_AMOUNT_MINOR, 'Amount is too large'),
   idempotencyKey: idempotencyKeySchema,
 });
 export type TopUpInput = z.infer<typeof topUpSchema>;
@@ -1350,10 +1350,30 @@ export async function topUpWallet(
     sendAmount: data.amount,
   });
   if (pricing.feeAmount >= data.amount) throw new AppError('VALIDATION', 'Amount is too small');
+  // The seed (system actor) funds demo wallets; everybody else is held to the cash-in limits.
+  const cashInOwner: CashInOwner | null =
+    ctx.actor.type === 'SYSTEM'
+      ? null
+      : wallet.partnerId
+        ? { partnerId: wallet.partnerId }
+        : wallet.user
+          ? { userId: wallet.user.id, tier: wallet.user.kycTier }
+          : null;
 
-  let transfer: Transfer;
+  let created: { transfer: Transfer; replayed: boolean };
   try {
-    transfer = await db.$transaction(async (tx) => {
+    created = await withTransaction(async (tx) => {
+      // Serialise the top-ups of one wallet: the limit check and the insert are one unit.
+      await lockAccounts(tx, [wallet.ledgerAccountId]);
+      const duplicate = await tx.transfer.findUnique({ where });
+      if (duplicate) return { transfer: duplicate, replayed: true };
+      if (cashInOwner) {
+        await assertCashInWithinLimits(tx, {
+          owner: cashInOwner,
+          amountUsd: pricing.sendAmountUsd,
+          now,
+        });
+      }
       const createdTransfer = await tx.transfer.create({
         data: {
           reference: newReference(),
@@ -1405,7 +1425,7 @@ export async function topUpWallet(
           currency: wallet.currency,
         },
       });
-      return createdTransfer;
+      return { transfer: createdTransfer, replayed: false };
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -1414,7 +1434,9 @@ export async function topUpWallet(
     }
     throw error;
   }
-  return { transfer: await dispatchToProvider(transfer.id, options.now), replayed: false };
+  // A duplicate found under the lock belongs to (and is dispatched by) the request that won.
+  if (created.replayed) return created;
+  return { transfer: await dispatchToProvider(created.transfer.id, options.now), replayed: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -1624,6 +1646,22 @@ export async function reverseTransfer(
   if (current.status !== 'COMPLETED')
     throw new AppError('INVALID_STATE', 'Only completed transfers can be reversed');
 
+  // Reversing a top-up sends the money back through the operator, so make sure the wallet still
+  // holds it BEFORE the operator is asked: the other order would refund the payer at the
+  // operator and then fail to debit the wallet. (The ledger reversal re-checks under the lock.)
+  if (current.type === 'TOPUP' && current.recipientWalletId) {
+    const held = await db.wallet.findUnique({
+      where: { id: current.recipientWalletId },
+      select: { ledgerAccount: { select: { balance: true } } },
+    });
+    if (!held || held.ledgerAccount.balance < current.receiveAmount) {
+      throw new AppError(
+        'INSUFFICIENT_FUNDS',
+        'The wallet no longer holds enough funds to reverse this top-up',
+      );
+    }
+  }
+
   if (current.deliveryMethod === 'MOBILE_MONEY' && current.providerId) {
     let result: ConnectorTransferResult;
     try {
@@ -1665,21 +1703,27 @@ export async function reverseTransfer(
     if (transfer.status !== 'COMPLETED')
       throw new AppError('INVALID_STATE', 'Only completed transfers can be reversed');
 
-    const commission = await tx.commission.findFirst({
-      where: { transferId, status: { not: 'REVERSED' } },
-    });
+    // The journals of a transfer only change under its row lock, which we hold.
     const journals = await tx.journal.findMany({
       where: { transferId, reversesJournalId: null, reversal: null },
       include: { entries: { select: { accountId: true } } },
       orderBy: { postedAt: 'desc' },
     });
+    // Lock every account first — including COMMISSION_PAYABLE, which serialises this reversal
+    // with a commission settlement — and only then read the commission. Reading it before the
+    // lock let a concurrent settlement pay the commission out while the reversal, still seeing
+    // ACCRUED, reversed the accrual as well (paid-out commission booked as never owed).
+    const accounts = await accountsForTransfer(tx, transfer);
+    await lockAccounts(tx, [
+      ...allAccountIds(accounts),
+      ...journals.flatMap((journal) => journal.entries.map((entry) => entry.accountId)),
+    ]);
+    const commission = await tx.commission.findFirst({
+      where: { transferId, status: { not: 'REVERSED' } },
+    });
     // A commission already paid out to the partner is not clawed back automatically.
     const reversible = journals.filter(
       (journal) => !(journal.kind === 'COMMISSION' && commission?.status === 'SETTLED'),
-    );
-    await lockAccounts(
-      tx,
-      reversible.flatMap((journal) => journal.entries.map((entry) => entry.accountId)),
     );
     for (const journal of reversible) {
       try {

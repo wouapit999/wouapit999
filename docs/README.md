@@ -1,13 +1,14 @@
 # BI-Rem — Documentation Index
 
-| Item                      | Value                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Programme                 | **BI-Rem** — pan-African remittance and mobile-money platform, 13 independently deployable phases                      |
-| Window                    | **2026-11-16 → 2028-06-30** (85 weeks) · production go-live **2027-12-10** (Phase 12 exit)                             |
-| Target scale              | 1,000,000 users · 100,000 transfers/day · 50 providers · 20 countries · 99.9 % availability · RPO 15 min · RTO 60 min  |
-| Source of truth for dates | [`roadmap/schedule.json`](./roadmap/schedule.json) — every date in this documentation set is copied from it            |
-| Repository conventions    | [`CLAUDE.md`](../CLAUDE.md) (stack, conventions, docs rules) · [repository README](../README.md) (how to run the code) |
-| Index owner               | Program Manager                                                                                                        |
+| Item                      | Value                                                                                                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Programme                 | **BI-Rem** — pan-African remittance and mobile-money platform, 13 independently deployable phases                                                           |
+| Window                    | **2026-11-16 → 2028-06-30** (85 weeks) · production go-live **2027-12-10** (Phase 12 exit)                                                                  |
+| Target scale              | 1,000,000 users · 100,000 transfers/day · 50 providers · 20 countries · 99.9 % availability · RPO 15 min · RTO 60 min                                       |
+| Source of truth for dates | [`roadmap/schedule.json`](./roadmap/schedule.json) — every date in this documentation set is copied from it                                                 |
+| Repository conventions    | [`CLAUDE.md`](../CLAUDE.md) (stack, conventions, docs rules) · [repository README](../README.md) (how to run the code)                                      |
+| Running today             | [BI-Rem Lite](./lite/README.md) — the 13 phases at small scale in one application (GitHub + Vercel + Neon); it illustrates the plan, it does not replace it |
+| Index owner               | Program Manager                                                                                                                                             |
 
 ---
 
@@ -70,6 +71,16 @@ Phases overlap by design (for example Phase 5 starts 2027-04-19 while Phase 4 ha
 
 Phase-specific architecture (component diagrams, sequences, design decisions and alternatives rejected) lives in §4 of each phase plan; ADRs are numbered per phase and indexed in [target architecture §12](./architecture/target-architecture.md#12-architecture-decision-index).
 
+### BI-Rem Lite (small-scale application)
+
+| Document                                                                             | Scope                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [BI-Rem Lite and the roadmap](./lite/README.md)                                      | What Lite is, how each of the 13 phases appears in it, the traceability table (phase → capability → route or file → how it was verified → status), open observations, limits against the full platform, how a feature graduates from Lite to the phase that owns it |
+| [Deploy guide](../apps/lite/DEPLOY.md)                                               | GitHub + Vercel + Neon, click by click: Marketplace database or a Neon project of your own, variables, preview deployments and Neon branches, custom domain, rotating secrets, resetting demo data, troubleshooting                                                 |
+| [Specification](../apps/lite/SPEC.md) · [Architecture](../apps/lite/ARCHITECTURE.md) | Binding scope and money-movement rules · routes, services, data model, tests                                                                                                                                                                                        |
+
+Lite reads [`roadmap/schedule.json`](./roadmap/schedule.json) and [`roadmap/index.html`](./roadmap/index.html): its public `/roadmap` page shows the same dates as this documentation set (`apps/lite/scripts/sync-roadmap.mjs` copies both before every build).
+
 ---
 
 ## 4. Roadmap data (`docs/roadmap/`)
@@ -127,20 +138,21 @@ Conventions used throughout: dates are ISO `YYYY-MM-DD` and match `schedule.json
 
 ## 7. Document ownership and review cadence
 
-| Documents                                  | Accountable owner                 | Reviewers                                    | Cadence                                                   |
-| ------------------------------------------ | --------------------------------- | -------------------------------------------- | --------------------------------------------------------- |
-| 00–03, `schedule.json`, `milestones.csv`   | Program Manager                   | Solution Architect, phase leads              | Fortnightly steering pack; at every gate                  |
-| 04, 05, `budget.csv`, `infrastructure.csv` | Program Manager + Finance Lead    | DevOps/SRE Lead                              | Monthly; at every gate                                    |
-| 06, `risk-register.csv`                    | Program Manager                   | Risk owners                                  | Fortnightly                                               |
-| 07                                         | Program Manager + DevOps/SRE Lead | All sign-off roles of Phase 12               | Before every go/no-go board and market launch             |
-| 08                                         | COO (custodian DevOps/SRE Lead)   | Payments ops, treasury, compliance           | Quarterly; after every P1                                 |
-| 09                                         | Head of Customer Operations       | MLRO, DPO, Head of Partnerships, Security    | Quarterly; at each phase exit                             |
-| Phase plans `phases/phase-NN-*.md`         | Phase lead named in the plan      | Solution Architect, QA Lead, Security        | At design freeze (Mx.1) and phase exit                    |
-| `architecture/*`                           | Solution Architect                | Backend, Frontend and DevOps leads, Security | At every ADR acceptance; target architecture at each gate |
-| `tools/check-docs.mjs`                     | Solution Architect                | DevOps/SRE Lead                              | When a new document type is added                         |
+| Documents                                  | Accountable owner                 | Reviewers                                    | Cadence                                                      |
+| ------------------------------------------ | --------------------------------- | -------------------------------------------- | ------------------------------------------------------------ |
+| 00–03, `schedule.json`, `milestones.csv`   | Program Manager                   | Solution Architect, phase leads              | Fortnightly steering pack; at every gate                     |
+| 04, 05, `budget.csv`, `infrastructure.csv` | Program Manager + Finance Lead    | DevOps/SRE Lead                              | Monthly; at every gate                                       |
+| 06, `risk-register.csv`                    | Program Manager                   | Risk owners                                  | Fortnightly                                                  |
+| 07                                         | Program Manager + DevOps/SRE Lead | All sign-off roles of Phase 12               | Before every go/no-go board and market launch                |
+| 08                                         | COO (custodian DevOps/SRE Lead)   | Payments ops, treasury, compliance           | Quarterly; after every P1                                    |
+| 09                                         | Head of Customer Operations       | MLRO, DPO, Head of Partnerships, Security    | Quarterly; at each phase exit                                |
+| Phase plans `phases/phase-NN-*.md`         | Phase lead named in the plan      | Solution Architect, QA Lead, Security        | At design freeze (Mx.1) and phase exit                       |
+| `architecture/*`                           | Solution Architect                | Backend, Frontend and DevOps leads, Security | At every ADR acceptance; target architecture at each gate    |
+| `tools/check-docs.mjs`                     | Solution Architect                | DevOps/SRE Lead                              | When a new document type is added                            |
+| `lite/README.md`, `apps/lite/DEPLOY.md`    | Solution Architect                | DevOps/SRE Lead, QA Lead                     | When `apps/lite/SPEC.md` changes; before every demonstration |
 
 ---
 
 ## 8. Status of this index
 
-Written 2026-11-10 against the repository contents at that date. All deliverables 00–09, the 13 phase plans, the six existing architecture notes plus the target architecture, the five roadmap data files, the interactive roadmap `roadmap/index.html` and the docs checker `roadmap/tools/check-docs.mjs` are present and listed above. The embedded snapshot in `index.html` dates from 2026-11-10; when served over HTTP the page reads the current `schedule.json` and `milestones.csv`.
+Written 2026-11-10 against the repository contents at that date; the BI-Rem Lite section and [`lite/README.md`](./lite/README.md) were added the same day. All deliverables 00–09, the 13 phase plans, the six existing architecture notes plus the target architecture, the five roadmap data files, the interactive roadmap `roadmap/index.html` and the docs checker `roadmap/tools/check-docs.mjs` are present and listed above. The embedded snapshot in `index.html` dates from 2026-11-10; when served over HTTP the page reads the current `schedule.json` and `milestones.csv`.

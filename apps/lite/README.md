@@ -9,11 +9,13 @@ double-entry money movement between wallets, real permissions and audit trail. O
 world is simulated (see [What is simulated](#what-is-simulated)). It sits next to the Phase 1
 foundation (`apps/api`, `apps/web`, `apps/admin`) and the roadmap, which stay as they are.
 
-| Read                                   | For                                                               |
-| -------------------------------------- | ----------------------------------------------------------------- |
-| [`SPEC.md`](./SPEC.md)                 | What Lite must do, phase by phase, and the money-movement rules.  |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | How it is built: routes, services, data model, how to add a page. |
-| `/roadmap` in the running app          | The programme, phase by phase, and what Lite already covers.      |
+| Read                                     | For                                                               |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| [`SPEC.md`](./SPEC.md)                   | What Lite must do, phase by phase, and the money-movement rules.  |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md)   | How it is built: routes, services, data model, how to add a page. |
+| [`DEPLOY.md`](./DEPLOY.md)               | Deploying on GitHub + Vercel + Neon, step by step.                |
+| [`docs/lite`](../../docs/lite/README.md) | Lite and the roadmap: phase-by-phase traceability and limits.     |
+| `/roadmap` in the running app            | The programme, phase by phase, and what Lite already covers.      |
 
 ## What is in it
 
@@ -25,6 +27,25 @@ foundation (`apps/api`, `apps/web`, `apps/admin`) and the roadmap, which stay as
 | Partner portal               | `/partner`                           | merchants, agents, API partners                          |
 | Public REST API              | `/api/v1`                            | partners, with an API key (`/partner/docs` documents it) |
 | Health                       | `/api/health`                        | monitoring                                               |
+
+## Screenshots
+
+Taken from a production build (`vercel-build`, then `next start`) on a freshly seeded database —
+demo data, simulated operators. Desktop shots are 1280 px wide; long pages are cut off.
+
+| Screen                                 | File                                                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Landing page                           | [`docs/screenshots/landing.jpg`](./docs/screenshots/landing.jpg)                                     |
+| Customer dashboard                     | [`docs/screenshots/customer-dashboard.jpg`](./docs/screenshots/customer-dashboard.jpg)               |
+| Customer dashboard on a phone (390 px) | [`docs/screenshots/customer-dashboard-mobile.png`](./docs/screenshots/customer-dashboard-mobile.png) |
+| Send money — check and confirm         | [`docs/screenshots/send-money-confirmation.jpg`](./docs/screenshots/send-money-confirmation.jpg)     |
+| Back office — executive dashboard      | [`docs/screenshots/admin-executive-dashboard.jpg`](./docs/screenshots/admin-executive-dashboard.jpg) |
+| Back office — compliance case          | [`docs/screenshots/compliance-case.jpg`](./docs/screenshots/compliance-case.jpg)                     |
+| Back office — treasury                 | [`docs/screenshots/treasury.jpg`](./docs/screenshots/treasury.jpg)                                   |
+| Partner portal — dashboard             | [`docs/screenshots/partner-dashboard.jpg`](./docs/screenshots/partner-dashboard.jpg)                 |
+| Programme roadmap                      | [`docs/screenshots/roadmap.jpg`](./docs/screenshots/roadmap.jpg)                                     |
+
+![Customer dashboard](./docs/screenshots/customer-dashboard.jpg)
 
 ## Run locally
 
@@ -77,14 +98,19 @@ compliance); then sign in as compliance and release it.
 ```bash
 pnpm --filter @bi-rem/lite lint
 pnpm --filter @bi-rem/lite typecheck
-pnpm --filter @bi-rem/lite test                    # unit + integration, on real PostgreSQL
+pnpm --filter @bi-rem/lite test                    # unit + integration (integration needs PostgreSQL)
 pnpm --filter @bi-rem/lite build
 pnpm --filter @bi-rem/lite test:e2e                # Playwright: the golden path, access control, link crawl
 pnpm --filter @bi-rem/lite test:e2e:walkthroughs   # four long area walk-throughs
 ```
 
 The test commands create and drop their own databases; they need a PostgreSQL role that may
-`CREATE DATABASE` (`TEST_DATABASE_ADMIN_URL`, default `postgresql://birem:birem@localhost:5432`).
+`CREATE DATABASE`. The server is the first of `TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL` and
+`DATABASE_URL`, else `postgresql://birem:birem@localhost:5432` — the database that URL names is
+never touched. `pnpm test` also works **without** PostgreSQL: when no server is reachable and
+none was named, the database-backed files are skipped with a notice at the start and the end of
+the run and only the unit tests run. A server that was named but cannot be used fails the run,
+as does a missing one with `REQUIRE_TEST_DATABASE=1` (CI sets it).
 The end-to-end suite builds the app, serves it with `next start` on port 3210 against a database
 it migrates and seeds itself, and needs Chromium
 (`pnpm --filter @bi-rem/lite exec playwright install chromium`, once).
@@ -93,82 +119,52 @@ demonstration instead — it changes the data there.
 
 ## Deploy: GitHub + Vercel + Neon
 
-Fifteen minutes, no server to manage. Every push to the production branch then migrates the
-database, refreshes the reference data and ships the app.
+Fifteen minutes, no server to manage. The full guide — exact click path, the variant with a
+Neon project you create yourself, preview deployments, custom domain, rotating secrets,
+resetting the demo data and troubleshooting — is **[`DEPLOY.md`](./DEPLOY.md)**. In short:
 
-### 1. GitHub
+1. **GitHub** — push this repository (the whole monorepo, with `pnpm-lock.yaml`).
+2. **Vercel** — **Add New… → Project**, import the repository, set **Root Directory** to
+   `apps/lite`. Install and build commands come from [`vercel.json`](./vercel.json).
+3. **Neon** — in the Vercel project, **Storage → Create Database → Neon**. The integration sets
+   `DATABASE_URL` (pooled, used at run time) and `DATABASE_URL_UNPOOLED` (direct, used by
+   migrations and the seed).
+4. **Variables** (Production):
 
-Push this repository to GitHub (the whole monorepo — Lite reads the roadmap from `docs/`).
+   | Variable              | Value                                                                            |
+   | --------------------- | -------------------------------------------------------------------------------- |
+   | `AUTH_SECRET`         | `openssl rand -base64 48`                                                        |
+   | `ENCRYPTION_KEY`      | `openssl rand -base64 32` — keep a copy: it decrypts the stored secrets          |
+   | `SEED_ADMIN_EMAIL`    | your administrator e-mail                                                        |
+   | `SEED_ADMIN_PASSWORD` | at least 10 characters (the build fails without it)                              |
+   | `SEED_DEMO_DATA`      | `true` only for a demonstration: every demo account has the public demo password |
 
-### 2. Neon
+5. **Deploy.** The build runs `pnpm run vercel-build`:
 
-Create a project at <https://neon.tech> (the free plan is enough; pick the region closest to your
-Vercel region). From **Connection details** copy two strings:
+   ```
+   sync-roadmap → prisma generate → prisma migrate deploy → seed → next build
+   ```
 
-- the **pooled** one (the host contains `-pooler`) → `DATABASE_URL`
-- the **direct** one → `DATABASE_URL_UNPOOLED`
+   The seed is idempotent, so every later push to the production branch simply migrates,
+   refreshes the reference data and ships. There is no deploy workflow in GitHub Actions:
+   Vercel's Git integration deploys, and the `lite` job of
+   [`ci.yml`](../../.github/workflows/ci.yml) rehearses the same install and build on every push.
 
-Alternatively add Neon from Vercel (**Storage → Create Database → Neon**): the integration
-creates the project and sets both variables for you.
+6. **Check** `https://<your-app>.vercel.app/api/health` and `/status`, sign in as the
+   administrator and switch on two-factor authentication (**My security**).
 
-### 3. Vercel
+Three things to know before you rely on it ([`DEPLOY.md`](./DEPLOY.md) has the detail):
 
-**Add New… → Project**, import the GitHub repository, then:
-
-| Setting          | Value                                                                     |
-| ---------------- | ------------------------------------------------------------------------- |
-| Root Directory   | `apps/lite` (keep "Include files outside the Root Directory" switched on) |
-| Framework Preset | Next.js                                                                   |
-| Build / Install  | leave empty — they come from [`vercel.json`](./vercel.json)               |
-| Node.js version  | 22.x                                                                      |
-
-Environment variables (**Production**):
-
-| Variable                | Value                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`          | Neon pooled connection string                                                                                |
-| `DATABASE_URL_UNPOOLED` | Neon direct connection string (used by migrations and the seed)                                              |
-| `AUTH_SECRET`           | output of `openssl rand -base64 48`                                                                          |
-| `ENCRYPTION_KEY`        | output of `openssl rand -base64 32` — keep a copy: it decrypts the stored secrets                            |
-| `SEED_ADMIN_EMAIL`      | your administrator e-mail                                                                                    |
-| `SEED_ADMIN_PASSWORD`   | a strong password, at least 10 characters (the build fails without it)                                       |
-| `SEED_DEMO_DATA`        | `true` for a demonstration with the demo accounts and 30 days of history; leave it out for an empty platform |
-
-Press **Deploy**. The build runs `pnpm run vercel-build`:
-
-```
-sync-roadmap → prisma generate → prisma migrate deploy → seed → next build
-```
-
-The seed is idempotent: it upserts the reference data (countries, providers, FX rates, fee
-rules, AML rules), creates the administrator if missing and never touches it again, and adds the
-demo data only once. Redeploying is always safe.
-
-### 4. Check
-
-- `https://<your-app>.vercel.app/api/health` answers `{"status":"ok", …}`.
-- `/status` shows the database and the simulated operators as operational.
-- Sign in as the administrator and switch on two-factor authentication (**My security**).
-
-### Things to know
-
-- **`SEED_DEMO_DATA=true` on a public address means public credentials.** Every demo account,
-  including the demo compliance and treasury officers, uses the password printed above and shown
-  on the sign-in page. That is the point of a demonstration; do not combine it with anything real.
-  To retire the demo accounts later, suspend them from **Staff & roles** / **Customers**.
-- **Preview deployments run the same build**, so they migrate and seed whatever database their
-  variables point to. Give the Preview environment its own Neon branch (the Vercel–Neon
-  integration can create one per preview), or leave the variables unset for Preview.
-- **Vercel Hobby limits** fit: no cron, no queue, no object storage; request bodies stay under
-  4.5 MB (KYC documents are at most 1 MB each).
-- **Rotating `ENCRYPTION_KEY`**: set the new key, raise `ENCRYPTION_KEY_VERSION`, and put the old
-  key in `ENCRYPTION_KEYS_PREVIOUS` (`{"1":"<old base64 key>"}`) so existing secrets still
-  decrypt. **Rotating `AUTH_SECRET`** signs everyone out.
+- **Preview deployments run the same build**: they migrate and seed whatever database their
+  variables point to. Never let them reach the production database — scope the database
+  variables to Production, or give previews their own Neon branch.
+- **`SEED_DEMO_DATA=true` on a public address means public credentials**, demo staff included.
 - **Provider webhooks** arrive at `POST /api/webhooks/providers/<provider code>` with the header
   `x-birem-signature: t=<unix>,v1=<hmac-sha256(secret, "<t>.<raw body>")>`. Generate the secret
   on the provider's page in the back office.
-- **Roadmap copies**: `/roadmap` and `/roadmap-full.html` are copies of `docs/roadmap/`, refreshed
-  by every build (`pnpm --filter @bi-rem/lite sync:roadmap`); a unit test fails if they drift.
+
+How Lite maps to the 13 phases of the programme, what was verified for each, and how a feature
+graduates from Lite to the full platform: [`docs/lite/README.md`](../../docs/lite/README.md).
 
 ## What is simulated
 

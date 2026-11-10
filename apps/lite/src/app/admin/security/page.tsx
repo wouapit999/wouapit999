@@ -157,7 +157,7 @@ export default async function SecurityPage() {
             <TBody>
               {sessions.map((session) => (
                 <Tr key={session.id}>
-                  <Td className="whitespace-nowrap">
+                  <Td>
                     {formatRelative(session.createdAt)}
                     {session.id === current?.sessionId ? (
                       <Badge tone="brand" className="ml-1.5">
@@ -172,7 +172,7 @@ export default async function SecurityPage() {
                     {session.userAgent ?? 'Unknown'}
                   </Td>
                   <Td className="font-mono text-xs">{session.ip ?? '—'}</Td>
-                  <Td className="whitespace-nowrap">{formatDateTime(session.expiresAt)}</Td>
+                  <Td>{formatDateTime(session.expiresAt)}</Td>
                 </Tr>
               ))}
             </TBody>

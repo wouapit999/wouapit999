@@ -128,7 +128,7 @@ export default async function StaffPage() {
                     <Td>
                       <StatusBadge status={member.status} />
                     </Td>
-                    <Td className="whitespace-nowrap">{formatRelative(member.lastLoginAt)}</Td>
+                    <Td className="text-fg-muted">{formatRelative(member.lastLoginAt)}</Td>
                     <Td className="min-w-48">
                       {self ? (
                         <span className="text-xs text-fg-muted">

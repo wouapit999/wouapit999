@@ -18,7 +18,7 @@ import { getPublicProviderStatus } from '@/server/connectors/providers';
 import { db } from '@/server/db';
 import { getSetting } from '@/server/settings';
 
-import { getBuildInfo } from './build-info';
+import { getBuildInfo, getRepositoryLinks } from './build-info';
 
 export const metadata: Metadata = {
   title: 'System status',
@@ -68,10 +68,23 @@ function summarise(providers: readonly ProviderStatus[]) {
   };
 }
 
+/** "All 15 providers on this deployment are sandbox simulators", with the grammar of each case. */
+function simulatedSentence(simulated: number, total: number): string {
+  if (simulated === total) {
+    return total === 1
+      ? 'The only provider on this deployment is a sandbox simulator'
+      : `All ${total} providers on this deployment are sandbox simulators`;
+  }
+  return simulated === 1
+    ? `1 of the ${total} providers on this deployment is a sandbox simulator`
+    : `${simulated} of the ${total} providers on this deployment are sandbox simulators`;
+}
+
 /** Public status page (phase 12): platform, database, providers, build and availability target. */
 export default async function StatusPage() {
   const status = await loadStatus();
   const build = getBuildInfo();
+  const links = getRepositoryLinks();
   const summary = summarise(status.providers);
   const target = schedule.targetScale;
   const databaseUp = status.database === 'up';
@@ -180,12 +193,8 @@ export default async function StatusPage() {
           />
           {summary.simulated > 0 ? (
             <p className="border-b border-border px-5 py-3 text-sm text-fg-muted sm:px-6">
-              {summary.simulated === summary.total
-                ? 'Every provider'
-                : `${summary.simulated} providers`}{' '}
-              on this deployment {summary.simulated === 1 ? 'is a' : 'are'} sandbox simulator
-              {summary.simulated === 1 ? '' : 's'}: “healthy” means the simulator answered, not that
-              a live operator is reachable.
+              {simulatedSentence(summary.simulated, summary.total)}: “healthy” means the simulator
+              answered, not that a live operator is reachable.
             </p>
           ) : null}
           {status.providers.length > 0 ? (
@@ -262,6 +271,56 @@ export default async function StatusPage() {
             </CardBody>
           </Card>
         </div>
+
+        <Card className="mt-6">
+          <CardHeader
+            title="Go-live"
+            description="Before a deployment of BI-Rem Lite carries anything real"
+          />
+          <CardBody className="space-y-3 text-sm text-fg-muted">
+            <p>
+              BI-Rem Lite is a demonstration: operators and KYC vendors are simulated and there is
+              no licence, operator contract or regulator reporting behind it. The guides below are
+              kept in the repository, next to the code they describe.
+            </p>
+            <ul className="space-y-2">
+              {[
+                {
+                  href: links.deployGuide,
+                  label: 'Deploy guide',
+                  detail: 'GitHub, Vercel and Neon, step by step, with troubleshooting',
+                },
+                {
+                  href: links.goLiveChecklist,
+                  label: 'Go-live checklist',
+                  detail: 'what the production platform must pass before launch (phase 12)',
+                },
+                {
+                  href: links.liteDocs,
+                  label: 'Lite and the roadmap',
+                  detail: 'what is verified for each of the 13 phases, and the limits',
+                },
+                {
+                  href: links.ciWorkflow,
+                  label: 'CI pipeline',
+                  detail: 'deploy rehearsal, lint, typecheck, tests and end-to-end runs',
+                },
+              ].map((link) => (
+                <li key={link.href}>
+                  <a
+                    href={link.href}
+                    rel="noreferrer"
+                    className="font-medium text-accent underline underline-offset-2 hover:no-underline"
+                  >
+                    {link.label}
+                    <span className="sr-only"> (opens the repository on GitHub)</span>
+                  </a>{' '}
+                  — {link.detail}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
 
         <p className="mt-6 text-sm text-fg-muted">
           Machine-readable health:{' '}

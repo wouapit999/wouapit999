@@ -64,24 +64,36 @@ export function totpCode(secret: string, at: Date = new Date(), digits = TOTP_DI
   return hotp(base32Decode(secret), counter, digits);
 }
 
+/**
+ * The time-step counter `code` is valid for (the current step and `window` steps either side,
+ * for clock drift), or null. The caller can remember the counter to refuse a second use.
+ */
+export function matchTotpCounter(
+  secret: string,
+  code: string,
+  options: { at?: Date; window?: number } = {},
+): number | null {
+  const candidate = code.replace(/\s/g, '');
+  if (!/^\d{6}$/.test(candidate)) return null;
+  const at = options.at ?? new Date();
+  const window = options.window ?? 1;
+  const key = base32Decode(secret);
+  const counter = Math.floor(at.getTime() / 1000 / TOTP_STEP_SECONDS);
+  let matched: number | null = null;
+  for (let offset = -window; offset <= window; offset += 1) {
+    // No early exit: keep the comparison count constant.
+    if (timingSafeEqualString(hotp(key, counter + offset), candidate)) matched = counter + offset;
+  }
+  return matched;
+}
+
 /** Accepts the current step and `window` steps either side (clock drift). */
 export function verifyTotp(
   secret: string,
   code: string,
   options: { at?: Date; window?: number } = {},
 ): boolean {
-  const candidate = code.replace(/\s/g, '');
-  if (!/^\d{6}$/.test(candidate)) return false;
-  const at = options.at ?? new Date();
-  const window = options.window ?? 1;
-  const key = base32Decode(secret);
-  const counter = Math.floor(at.getTime() / 1000 / TOTP_STEP_SECONDS);
-  let valid = false;
-  for (let offset = -window; offset <= window; offset += 1) {
-    // No early exit: keep the comparison count constant.
-    if (timingSafeEqualString(hotp(key, counter + offset), candidate)) valid = true;
-  }
-  return valid;
+  return matchTotpCounter(secret, code, options) !== null;
 }
 
 /** `otpauth://` URI for QR codes / manual entry. */

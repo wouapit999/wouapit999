@@ -18,7 +18,13 @@ import { RATE_LIMITS, enforceRateLimit } from '../rate-limit';
 import { type ActionContext, type UserActor, requireUserActor } from '../rbac';
 import { ensureUserWallet } from '../wallets';
 import { SESSION_TTL_SECONDS, signSessionToken, verifySessionToken } from './token';
-import { generateTotpSecret, totpAuthUri, verifyTotp } from './totp';
+import {
+  TOTP_STEP_SECONDS,
+  generateTotpSecret,
+  matchTotpCounter,
+  totpAuthUri,
+  verifyTotp,
+} from './totp';
 
 /**
  * Authentication: registration, password login with lockout, sessions, TOTP MFA.
@@ -214,6 +220,30 @@ async function recordAttempt(
   });
 }
 
+/** How long a used TOTP step is remembered — longer than the ±1 step acceptance window. */
+const TOTP_REPLAY_TTL_SECONDS = 5 * TOTP_STEP_SECONDS;
+
+/**
+ * Records that `userId` used the TOTP code of time step `counter`. Returns false when that step
+ * was already used. One atomic insert (primary key) in the rate-limit bucket table, so it is
+ * safe across serverless instances and is purged with the expired buckets.
+ */
+async function claimTotpCounter(userId: string, counter: number, now: Date): Promise<boolean> {
+  // ON CONFLICT DO NOTHING: a replayed code is a zero-row insert, not a failed statement.
+  const claimed = await db.rateLimitBucket.createMany({
+    data: [
+      {
+        key: `totp:used:${userId}:${counter}`,
+        count: 1,
+        windowStart: now,
+        expiresAt: new Date(now.getTime() + TOTP_REPLAY_TTL_SECONDS * 1000),
+      },
+    ],
+    skipDuplicates: true,
+  });
+  return claimed.count === 1;
+}
+
 /**
  * Password (+ TOTP) login. After {@link MAX_FAILED_LOGINS} consecutive failures the account is
  * locked for {@link LOCKOUT_MINUTES} minutes. Attempts are rate limited per IP and per e-mail in
@@ -304,8 +334,12 @@ export async function login(input: LoginInput, meta: RequestMeta = {}): Promise<
   let mfaVerified = false;
   if (user.mfaEnabled && user.mfaSecretEnc) {
     if (!data.totpCode) return { status: 'MFA_REQUIRED' };
-    if (!verifyTotp(decryptSecret(user.mfaSecretEnc), data.totpCode)) {
-      return fail('BAD_TOTP', 'The verification code is not valid');
+    const counter = matchTotpCounter(decryptSecret(user.mfaSecretEnc), data.totpCode);
+    if (counter === null) return fail('BAD_TOTP', 'The verification code is not valid');
+    // A code is good for one sign-in: someone who observed it (shoulder surfing, a phishing
+    // relay) must not be able to replay it inside its ±30 s validity window.
+    if (!(await claimTotpCounter(user.id, counter, now))) {
+      return fail('TOTP_REUSED', 'This code was already used. Wait for the next one.');
     }
     mfaVerified = true;
   }

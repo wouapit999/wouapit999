@@ -155,9 +155,6 @@ export default async function TreasuryPage({ searchParams }: { searchParams: Sea
               <Th align="right">Wallet liabilities</Th>
               <Th align="right">In suspense</Th>
               <Th align="right">FX position</Th>
-              <Th align="right">Fee revenue</Th>
-              <Th align="right">FX revenue</Th>
-              <Th align="right">Commission payable</Th>
             </Tr>
           </THead>
           <TBody>
@@ -169,23 +166,28 @@ export default async function TreasuryPage({ searchParams }: { searchParams: Sea
                     status={position.liquidity}
                     label={position.liquidity === 'OK' ? 'OK' : humanize(position.liquidity)}
                   />
-                  <p className="tabular mt-0.5 whitespace-nowrap text-xs text-fg-muted">
+                  <p className="tabular mt-0.5 text-xs text-fg-muted">
                     {position.lowBalance === null ? (
                       'No threshold'
                     ) : (
                       <>
-                        low{' '}
-                        <Money
-                          amount={position.lowBalance}
-                          currency={position.currency}
-                          withCode={false}
-                        />
-                        {' · critical '}
-                        <Money
-                          amount={position.criticalBalance ?? 0n}
-                          currency={position.currency}
-                          withCode={false}
-                        />
+                        <span className="whitespace-nowrap">
+                          low{' '}
+                          <Money
+                            amount={position.lowBalance}
+                            currency={position.currency}
+                            withCode={false}
+                          />
+                        </span>
+                        {' · '}
+                        <span className="whitespace-nowrap">
+                          critical{' '}
+                          <Money
+                            amount={position.criticalBalance ?? 0n}
+                            currency={position.currency}
+                            withCode={false}
+                          />
+                        </span>
                       </>
                     )}
                   </p>
@@ -211,6 +213,30 @@ export default async function TreasuryPage({ searchParams }: { searchParams: Sea
                     signed
                   />
                 </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
+        {/* Revenue and payables sit in their own table: nine columns do not fit a laptop screen. */}
+        <CardBody className="border-t border-border pb-2">
+          <h3 className="text-sm font-semibold text-fg">Revenue and payables</h3>
+          <p className="text-sm text-fg-muted">
+            Earned to date per currency, and commission owed to partners until it is settled.
+          </p>
+        </CardBody>
+        <Table caption="Revenue and commission payable by currency">
+          <THead>
+            <Tr>
+              <Th>Currency</Th>
+              <Th align="right">Fee revenue</Th>
+              <Th align="right">FX revenue</Th>
+              <Th align="right">Commission payable</Th>
+            </Tr>
+          </THead>
+          <TBody>
+            {positions.map((position) => (
+              <Tr key={position.currency}>
+                <Td className="font-medium">{position.currency}</Td>
                 <Td align="right">
                   <Money
                     amount={position.feeRevenue}
@@ -581,7 +607,7 @@ export default async function TreasuryPage({ searchParams }: { searchParams: Sea
         </CardBody>
       </Card>
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-5 2xl:grid-cols-2">
         <Card>
           <CardHeader title="Ledger integrity" description="Whole ledger, per currency" />
           <Table caption="Ledger integrity per currency">

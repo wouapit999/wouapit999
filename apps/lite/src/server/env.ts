@@ -17,6 +17,7 @@ const booleanFromString = z
 
 const rawSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).optional(),
+  VERCEL: z.string().optional(),
   VERCEL_ENV: z.string().optional(),
   DATABASE_URL: z.string().min(1).optional(),
   DATABASE_URL_UNPOOLED: z.string().min(1).optional(),
@@ -33,7 +34,12 @@ const rawSchema = z.object({
 
 export interface Env {
   readonly nodeEnv: 'development' | 'test' | 'production';
-  /** True for `NODE_ENV=production` or a Vercel production deployment/build. */
+  /**
+   * True for `NODE_ENV=production` and for every Vercel build or deployment — production **and
+   * preview** (anything but `vercel dev`). A preview deployment is reachable from the internet and
+   * may be attached to a real database, so it gets the production rules: secrets are mandatory,
+   * the public seed password is refused and demo data is opt-in.
+   */
   readonly isProduction: boolean;
   readonly databaseUrl: string;
   /** Direct URL for migrations/seed; falls back to `databaseUrl`. */
@@ -104,7 +110,11 @@ export function parseEnv(source: Record<string, string | undefined> = process.en
   }
   const raw = result.data;
   const nodeEnv = raw.NODE_ENV ?? 'development';
-  const isProduction = nodeEnv === 'production' || raw.VERCEL_ENV === 'production';
+  const onVercel =
+    raw.VERCEL_ENV === 'production' ||
+    raw.VERCEL_ENV === 'preview' ||
+    (raw.VERCEL === '1' && raw.VERCEL_ENV !== 'development');
+  const isProduction = nodeEnv === 'production' || onVercel;
 
   if (!raw.DATABASE_URL) {
     throw new EnvError('DATABASE_URL is required');
@@ -115,6 +125,14 @@ export function parseEnv(source: Record<string, string | undefined> = process.en
   if (!raw.ENCRYPTION_KEY) missing.push('ENCRYPTION_KEY');
   if (isProduction && missing.length > 0) {
     throw new EnvError(`${missing.join(' and ')} must be set in production`);
+  }
+  // The development fallbacks are public (they are in the repository): setting them explicitly
+  // in production would make every session forgeable and every stored secret decryptable.
+  if (isProduction && raw.AUTH_SECRET === DEV_AUTH_SECRET) {
+    throw new EnvError('AUTH_SECRET is the public development value — generate a real secret');
+  }
+  if (isProduction && raw.ENCRYPTION_KEY === DEV_ENCRYPTION_KEY) {
+    throw new EnvError('ENCRYPTION_KEY is the public development value — generate a real key');
   }
   if (missing.length > 0 && nodeEnv !== 'test' && !warned) {
     warned = true;

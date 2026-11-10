@@ -788,9 +788,16 @@ Development falls back to fixed `AUTH_SECRET` / `ENCRYPTION_KEY` values (with a 
 only `DATABASE_URL` is required locally. To run a second server next to the first, give it its
 own dist dir and port: `NEXT_DIST_DIR=.next-b npx next dev -p 3102`.
 
-All test commands create and drop their own databases through `TEST_DATABASE_ADMIN_URL`
-(default `postgresql://birem:birem@localhost:5432/postgres`; the role must be allowed to
-`CREATE DATABASE`). None of them touches the database in `DATABASE_URL`.
+All test commands create and drop their own databases on the server named by the first of
+`TEST_DATABASE_ADMIN_URL`, `TEST_DATABASE_URL` and `DATABASE_URL` (default
+`postgresql://birem:birem@localhost:5432/postgres`; the role must be allowed to
+`CREATE DATABASE`). None of them touches the database that URL names.
+
+`pnpm test` runs with and without PostgreSQL (`vitest.config.ts`,
+`tests/helpers/test-database.ts`): with no server reachable and none named, the files that call
+`withTestDatabase()` are left out and a notice is printed at the start and the end of the run;
+a server that was named but cannot be used — or any missing server with
+`REQUIRE_TEST_DATABASE=1`, which CI sets — fails the run instead.
 
 **Vitest.** Each run creates its own template database (migrations + reference data, no demo
 data) and every integration test file clones it, so runs never collide.
@@ -847,7 +854,9 @@ error or 5xx response.
 scripted sessions written with the areas — `core`, `customer`, `admin`, `partner` — covering
 MFA, sessions, KYC rejection and resubmission, SAR filing, provider secrets and signed provider
 webhooks, partner webhook deliveries with a local receiver, agent cash-in and every export.
-`run.mjs` seeds a template database, starts `next dev` on port 3220 (`.next-walkthroughs`) and
+`run.mjs` seeds a template database, starts `next dev` on port 3220 (`.next-walkthroughs`; port,
+database and dist dir are overridable — `E2E_WALKTHROUGH_PORT`, `E2E_WALKTHROUGH_DATABASE`,
+`NEXT_DIST_DIR` — so two runs can work side by side) and
 gives each walk-through a fresh copy, because each one changes the demo data and signs in many
 times (development rate limits are ×20). A walk-through default-exports
 `async ({ browser, baseUrl, check, login }) => { … }`.
@@ -904,7 +913,10 @@ above to force outcomes); a name close to "Viktor Demo Sanctionov" to trigger a 
 
 ## 10. Known gaps
 
-- Top-ups are not screened by the AML engine and are not counted in KYC limits.
+- Top-ups are not screened by the AML engine. They have their own per-tier cash-in allowance
+  (`cashInLimitsFor` in `src/server/kyc/limits.ts`), derived from the tier's send limits because
+  there is no separate setting: one top-up or one day may load the tier's monthly send limit, a
+  month three times that. Partner wallets count as tier 2.
 - `HttpConnector` is a generic JSON adapter that has not been exercised against any real
   operator; it is covered only by type checks.
 - Partner webhooks are delivered inline, once (no retry queue); `redeliverWebhook` is manual
@@ -914,7 +926,8 @@ above to force outcomes); a name close to "Viktor Demo Sanctionov" to trigger a 
 - Agent cash-out is "customer pays the agent code, agent verifies the reference": the portal
   does not record that the cash was handed over, so paying a reference twice is prevented by the
   agent's own cash sheet, not by the system.
-- TOTP has no recovery codes and does not track used codes within their 30-second step.
+- TOTP has no recovery codes: a user who loses the authenticator needs an administrator. (A
+  code is single-use: each accepted time step is claimed once per user.)
 - Reversing a transfer whose commission was already settled leaves the paid commission with the
   partner (documented behaviour, no claw-back).
 - Outbound URL checks (provider base URLs, partner webhooks) resolve DNS once before the
@@ -927,5 +940,8 @@ above to force outcomes); a name close to "Viktor Demo Sanctionov" to trigger a 
   password. That is intended for a demonstration deployment and nothing else.
 - The deployment path is rehearsed against a local PostgreSQL 16 (`vercel-build` twice on an
   empty database, then `next start`); it has not been run on Vercel or against Neon from here.
+- Inside `/app`, `/admin` and `/partner` a missing or foreign object renders the "not found"
+  page with HTTP 200, because those pages stream behind a loading state. Nothing leaks; route
+  handlers (PDF, documents, exports, API) answer a real 404.
 - The back office has no error boundary of its own: a crashed back-office page falls back to
   the root "Something went wrong" page, without the navigation.

@@ -30,3 +30,37 @@ export function getBuildInfo(env: NodeJS.ProcessEnv = process.env): BuildInfo {
     region: clean(env.VERCEL_REGION, /^[a-z0-9-]{2,20}$/),
   };
 }
+
+/**
+ * Links to the guides that live in the repository rather than in the app (phase 12): the deploy
+ * guide, the go-live checklist and the CI pipeline. On a Git-connected Vercel deployment they
+ * point at the repository and commit that were deployed; anywhere else at the canonical
+ * repository's default branch.
+ */
+export interface RepositoryLinks {
+  readonly repository: string;
+  readonly deployGuide: string;
+  readonly goLiveChecklist: string;
+  readonly liteDocs: string;
+  readonly ciWorkflow: string;
+}
+
+const CANONICAL_REPOSITORY = 'https://github.com/wouapit999/wouapit999';
+
+export function getRepositoryLinks(env: NodeJS.ProcessEnv = process.env): RepositoryLinks {
+  const owner = clean(env.VERCEL_GIT_REPO_OWNER, /^[\w.-]{1,100}$/);
+  const slug = clean(env.VERCEL_GIT_REPO_SLUG, /^[\w.-]{1,100}$/);
+  const sha = clean(env.VERCEL_GIT_COMMIT_SHA, /^[0-9a-f]{7,64}$/i);
+  const deployedFromGitHub = env.VERCEL_GIT_PROVIDER === 'github' && owner && slug && sha;
+  const repository = deployedFromGitHub
+    ? `https://github.com/${owner}/${slug}`
+    : CANONICAL_REPOSITORY;
+  const ref = deployedFromGitHub ? sha : 'main';
+  return {
+    repository,
+    deployGuide: `${repository}/blob/${ref}/apps/lite/DEPLOY.md`,
+    goLiveChecklist: `${repository}/blob/${ref}/docs/07-go-live-checklist.md`,
+    liteDocs: `${repository}/blob/${ref}/docs/lite/README.md`,
+    ciWorkflow: `${repository}/actions/workflows/ci.yml`,
+  };
+}

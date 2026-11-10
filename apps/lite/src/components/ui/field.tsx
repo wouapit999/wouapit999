@@ -61,12 +61,17 @@ function Chrome({
       </label>
       {children}
       {hint && !error ? (
-        <p id={`${id}-hint`} className="text-xs text-fg-muted">
+        // Hints can carry unbreakable text (JSON, URLs): let it wrap instead of widening the page.
+        <p id={`${id}-hint`} className="text-xs text-fg-muted [overflow-wrap:anywhere]">
           {hint}
         </p>
       ) : null}
       {error ? (
-        <p id={`${id}-error`} role="alert" className="text-xs font-medium text-danger">
+        <p
+          id={`${id}-error`}
+          role="alert"
+          className="text-xs font-medium text-danger [overflow-wrap:anywhere]"
+        >
           {error}
         </p>
       ) : null}

@@ -5,20 +5,9 @@ import { z } from 'zod';
 
 import { createPublicAction } from '@/lib/server-action';
 import { emailSchema, login, passwordSchema, phoneSchema, registerCustomer } from '@/server/auth';
+import { safeNextPath } from '@/server/auth/redirect';
 import { endSession, setSessionCookie } from '@/server/auth/session';
 import { AppError } from '@/server/errors';
-import { canAccessPath, homePathForRole } from '@/server/rbac';
-
-/** Only same-origin, absolute-path redirects the user's role may open. */
-function safeNext(next: string | undefined, role: Parameters<typeof homePathForRole>[0]): string {
-  const home = homePathForRole(role);
-  if (!next?.startsWith('/') || next.startsWith('//') || next.includes('\\')) return home;
-  const path = next.split(/[?#]/)[0] ?? '';
-  const inArea = ['/app', '/admin', '/partner'].some(
-    (area) => path === area || path.startsWith(`${area}/`),
-  );
-  return inArea && canAccessPath(role, path) ? next : home;
-}
 
 const loginFormSchema = z.object({
   email: emailSchema,
@@ -50,7 +39,7 @@ export const loginAction = createPublicAction({
       });
     }
     await setSessionCookie(result.token, result.expiresAt);
-    return { path: safeNext(input.next, result.user.role) };
+    return { path: safeNextPath(input.next, result.user.role) };
   },
   redirectTo: (result) => result.path,
 });

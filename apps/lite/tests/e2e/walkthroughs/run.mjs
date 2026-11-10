@@ -11,7 +11,8 @@
  * its own port and dist dir, and gives every walk-through a fresh copy of the template (each one
  * changes the demo data and signs in many times, which the non-production rate limits allow).
  * Needs a Postgres role that may CREATE DATABASE: `TEST_DATABASE_ADMIN_URL`, default
- * `postgresql://birem:birem@localhost:5432/postgres`.
+ * `postgresql://birem:birem@localhost:5432/postgres`. To run two at once give each its own
+ * `E2E_WALKTHROUGH_PORT`, `E2E_WALKTHROUGH_DATABASE` and `NEXT_DIST_DIR`.
  *
  * With `E2E_BASE_URL` set, nothing is provisioned: the walk-throughs run against that instance,
  * which must hold freshly seeded demo data and must not enforce the production rate limits.
@@ -52,9 +53,14 @@ const baseUrl = external ?? `http://localhost:${port}`;
 const adminUrl = new URL(
   process.env.TEST_DATABASE_ADMIN_URL ?? 'postgresql://birem:birem@localhost:5432/postgres',
 );
-const TEMPLATE = 'birem_lite_walk_tpl';
-const DATABASE = 'birem_lite_walk';
-const DIST_DIR = '.next-walkthroughs';
+// Port, database and dist dir are all overridable, so two runs never collide.
+const DATABASE = process.env.E2E_WALKTHROUGH_DATABASE ?? 'birem_lite_walk';
+if (!/^[a-z0-9_]{1,50}$/.test(DATABASE)) {
+  console.error(`walk-throughs: unsafe E2E_WALKTHROUGH_DATABASE "${DATABASE}"`);
+  process.exit(1);
+}
+const TEMPLATE = `${DATABASE}_tpl`;
+const DIST_DIR = process.env.NEXT_DIST_DIR ?? '.next-walkthroughs';
 const urlFor = (name) =>
   Object.assign(new URL(adminUrl), { pathname: `/${name}`, search: '' }).toString();
 

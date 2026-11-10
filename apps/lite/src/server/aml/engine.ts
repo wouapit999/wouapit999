@@ -9,6 +9,9 @@ import { toBigInt } from '../money';
 import { getSetting } from '../settings';
 import { nameSimilarity, normalizeName } from './names';
 
+/** How far past a request's start its history window stays open (see `velocity`). */
+const QUEUE_SLACK_MS = 60_000;
+
 /**
  * AML / fraud rule engine (phase 8). Evaluated inside the transfer transaction, BEFORE any
  * debit, with the sender's wallet account locked so velocity counts are consistent.
@@ -194,13 +197,18 @@ export async function evaluateTransfer(
   ): Promise<VelocityRow> => {
     if (!input.senderUserId) return { count: 0n, value: 0n };
     const since = new Date(input.now.getTime() - windowHours * 3_600_000);
+    // `input.now` is when the request started — before it queued for the sender's lock. A
+    // request that started later may have committed first, with a later timestamp; closing the
+    // window exactly at `now` hid it and let parallel requests slip under the velocity and
+    // structuring rules. The slack outlasts the longest a request can queue (maxWait + timeout).
+    const until = new Date(input.now.getTime() + QUEUE_SLACK_MS);
     const rows = await client.$queryRaw<VelocityRow[]>`
       SELECT COUNT(*) AS count, COALESCE(SUM(send_amount_usd), 0) AS value
       FROM transfers
       WHERE sender_user_id = ${input.senderUserId}::uuid
         AND type <> 'TOPUP'
         AND status IN ('PROCESSING', 'ON_HOLD', 'COMPLETED')
-        AND created_at >= ${since} AND created_at <= ${input.now}
+        AND created_at >= ${since} AND created_at <= ${until}
         AND (${minUsd ?? null}::bigint IS NULL OR send_amount_usd >= ${minUsd ?? null}::bigint)
         AND (${maxUsd ?? null}::bigint IS NULL OR send_amount_usd < ${maxUsd ?? null}::bigint)`;
     return rows[0] ?? { count: 0n, value: 0n };

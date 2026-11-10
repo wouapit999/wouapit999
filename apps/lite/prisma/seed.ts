@@ -4,6 +4,7 @@ import { hashPassword } from '@/server/crypto';
 import { db, disconnectDb } from '@/server/db';
 import { getEnv, resetEnvCache } from '@/server/env';
 import { verifyLedgerIntegrity } from '@/server/ledger';
+import { reencryptStoredSecrets } from '@/server/secrets-rotation';
 import { seedDemoData } from '@/server/seed/demo';
 import { seedAdminUser, seedReferenceData } from '@/server/seed/reference';
 
@@ -16,6 +17,8 @@ import { seedAdminUser, seedReferenceData } from '@/server/seed/reference';
  *   2. The initial administrator from SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (created once; an
  *      existing account is never modified).
  *   3. Demo data when SEED_DEMO_DATA is true (default outside production).
+ *   4. Key rotation: stored secrets still encrypted with an older ENCRYPTION_KEY version are
+ *      re-encrypted with the current one.
  *
  * Uses the direct connection (DATABASE_URL_UNPOOLED) when provided.
  */
@@ -56,6 +59,33 @@ async function main(): Promise<void> {
     for (const failure of result.failures) console.warn(`[seed] skipped — ${failure}`);
   } else {
     console.log('[seed] demo data disabled (SEED_DEMO_DATA is not true)');
+  }
+
+  const rotation = await reencryptStoredSecrets(db);
+  const rewritten =
+    rotation.rewritten.providerSecrets +
+    rotation.rewritten.mfaSecrets +
+    rotation.rewritten.webhookEndpoints;
+  if (rewritten > 0) {
+    console.log(
+      `[seed] re-encrypted ${rewritten} stored secret(s) with key version ${env.encryptionKeyVersion}`,
+    );
+  }
+  if (rotation.unreadable.length > 0) {
+    console.warn(
+      `[seed] ${rotation.unreadable.length} stored secret(s) could not be decrypted and were left unchanged ` +
+        `(is their key in ENCRYPTION_KEYS_PREVIOUS?): ${rotation.unreadable.slice(0, 10).join(', ')}`,
+    );
+  }
+  const staleVersions = rotation.versionsInUse.filter(
+    (version) => version !== env.encryptionKeyVersion,
+  );
+  if (rewritten > 0 || env.previousEncryptionKeys.size > 0) {
+    console.log(
+      staleVersions.length === 0
+        ? '[seed] every stored secret uses the current key — ENCRYPTION_KEYS_PREVIOUS can be removed'
+        : `[seed] key version(s) ${staleVersions.join(', ')} still in use — keep them in ENCRYPTION_KEYS_PREVIOUS`,
+    );
   }
 
   const integrity = await verifyLedgerIntegrity();

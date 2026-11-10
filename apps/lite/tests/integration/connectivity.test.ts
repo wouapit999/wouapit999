@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   createProvider,
@@ -20,15 +20,21 @@ import {
   registerAdapter,
 } from '@/server/connectors/registry';
 import { SimulatorConnector } from '@/server/connectors/simulator';
-import { decryptSecret } from '@/server/crypto';
+import { decryptSecret, encryptSecret, secretKeyVersion } from '@/server/crypto';
 import { db } from '@/server/db';
+import { resetEnvCache } from '@/server/env';
+import { reencryptStoredSecrets } from '@/server/secrets-rotation';
 
 import { withTestDatabase } from '../helpers/db';
 import { createCustomer, createStaff, providerId } from '../helpers/factories';
 
 withTestDatabase();
 
-const SECRET_VALUES = ['fake_other_vendor_SUPER-secret-token-9f31', 'p@ssw0rd-very-private', 'client-id-123'];
+const SECRET_VALUES = [
+  'fake_other_vendor_SUPER-secret-token-9f31',
+  'p@ssw0rd-very-private',
+  'client-id-123',
+];
 
 /** Every text/json value in the database, to prove a plaintext is stored nowhere. */
 async function dumpDatabase(): Promise<string> {
@@ -269,3 +275,118 @@ function baseInput(code: string) {
     environment: 'SANDBOX' as const,
   };
 }
+
+describe('encryption key rotation', () => {
+  const KEY_OLD = Buffer.alloc(32, 21).toString('base64');
+  const KEY_NEW = Buffer.alloc(32, 22).toString('base64');
+  const saved = {
+    key: process.env.ENCRYPTION_KEY,
+    version: process.env.ENCRYPTION_KEY_VERSION,
+    previous: process.env.ENCRYPTION_KEYS_PREVIOUS,
+  };
+  const setKeys = (key: string, version: number, previous?: Record<number, string>): void => {
+    process.env.ENCRYPTION_KEY = key;
+    process.env.ENCRYPTION_KEY_VERSION = String(version);
+    if (previous) process.env.ENCRYPTION_KEYS_PREVIOUS = JSON.stringify(previous);
+    else delete process.env.ENCRYPTION_KEYS_PREVIOUS;
+    resetEnvCache();
+  };
+  const restore = (name: string, value: string | undefined): void => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+
+  afterEach(() => {
+    restore('ENCRYPTION_KEY', saved.key);
+    restore('ENCRYPTION_KEY_VERSION', saved.version);
+    restore('ENCRYPTION_KEYS_PREVIOUS', saved.previous);
+    resetEnvCache();
+  });
+
+  it('re-encrypts every stored secret with the new key so the old key can be dropped', async () => {
+    // Start from a clean slate so the counts below are exact.
+    await db.providerSecret.deleteMany();
+    await db.webhookEndpoint.deleteMany();
+    await db.user.updateMany({ data: { mfaSecretEnc: null } });
+
+    // Secrets written under key version 7 …
+    setKeys(KEY_OLD, 7);
+    const admin = await createStaff('ADMIN');
+    const id = await providerId('mtn-momo-cm');
+    await setProviderCredentials(admin.ctx, id, { token: 'rotate-me-credential' });
+    const webhook = await rotateWebhookSecret(admin.ctx, id);
+    const customer = await createCustomer();
+    await db.user.update({
+      where: { id: customer.id },
+      data: { mfaSecretEnc: encryptSecret('JBSWY3DPEHPK3PXP') },
+    });
+    const partner = await db.partner.create({
+      data: {
+        type: 'MERCHANT',
+        name: 'Rotation Test Merchant',
+        code: `rot-${Date.now()}`,
+        countryCode: 'CM',
+        currency: 'XAF',
+        contactEmail: 'rotation@test.local',
+      },
+    });
+    const endpoint = await db.webhookEndpoint.create({
+      data: {
+        partnerId: partner.id,
+        url: 'https://hooks.example.test/birem',
+        secretEnc: encryptSecret('whsec_partner_signing_secret'),
+      },
+    });
+
+    // … then the key is rotated to version 8, the old key kept for decryption.
+    setKeys(KEY_NEW, 8, { 7: KEY_OLD });
+    const report = await reencryptStoredSecrets(db);
+    expect(report.rewritten).toEqual({ providerSecrets: 2, mfaSecrets: 1, webhookEndpoints: 1 });
+    expect(report.unreadable).toEqual([]);
+    expect(report.versionsInUse).toEqual([8]);
+
+    // The old key is no longer needed: everything decrypts with the new key alone.
+    setKeys(KEY_NEW, 8);
+    const rows = await db.providerSecret.findMany({ where: { providerId: id } });
+    expect(rows.map((row) => [row.keyVersion, secretKeyVersion(row.ciphertext)])).toEqual([
+      [8, 8],
+      [8, 8],
+    ]);
+    expect((await loadProviderRuntime(id)).credentials).toEqual({ token: 'rotate-me-credential' });
+    expect(await loadWebhookSecrets(id)).toEqual([webhook.generatedSecret]);
+    const user = await db.user.findUniqueOrThrow({ where: { id: customer.id } });
+    expect(decryptSecret(user.mfaSecretEnc!)).toBe('JBSWY3DPEHPK3PXP');
+    const storedEndpoint = await db.webhookEndpoint.findUniqueOrThrow({
+      where: { id: endpoint.id },
+    });
+    expect(decryptSecret(storedEndpoint.secretEnc)).toBe('whsec_partner_signing_secret');
+
+    // Idempotent: a second pass rewrites nothing.
+    const again = await reencryptStoredSecrets(db);
+    expect(again.rewritten).toEqual({ providerSecrets: 0, mfaSecrets: 0, webhookEndpoints: 0 });
+    expect(again.current).toBe(4);
+  });
+
+  it('leaves a secret it cannot decrypt untouched and reports it without its content', async () => {
+    await db.providerSecret.deleteMany();
+    await db.webhookEndpoint.deleteMany();
+    await db.user.updateMany({ data: { mfaSecretEnc: null } });
+
+    setKeys(KEY_OLD, 7);
+    const admin = await createStaff('ADMIN');
+    const id = await providerId('orange-money-cm');
+    await setProviderCredentials(admin.ctx, id, { token: 'orphaned-credential' });
+    const before = await db.providerSecret.findFirstOrThrow({ where: { providerId: id } });
+
+    // Rotated without keeping the old key.
+    setKeys(KEY_NEW, 8);
+    const report = await reencryptStoredSecrets(db);
+    expect(report.rewritten).toEqual({ providerSecrets: 0, mfaSecrets: 0, webhookEndpoints: 0 });
+    expect(report.unreadable).toEqual([`provider_secrets:${before.id}`]);
+    expect(report.versionsInUse).toEqual([7]);
+    expect(JSON.stringify(report)).not.toContain('orphaned-credential');
+    const after = await db.providerSecret.findUniqueOrThrow({ where: { id: before.id } });
+    expect(after.ciphertext).toBe(before.ciphertext);
+    expect(after.keyVersion).toBe(7);
+  });
+});

@@ -266,6 +266,33 @@ describe('environment validation', () => {
     ).toBe(true);
   });
 
+  it('applies the production rules to every Vercel build, preview included', () => {
+    // A preview build has no NODE_ENV during the seed step; it must still refuse to run with
+    // the public development secrets and must not seed demo accounts by default.
+    for (const vercel of [
+      { VERCEL: '1', VERCEL_ENV: 'preview' },
+      { VERCEL_ENV: 'preview' },
+      { VERCEL: '1' },
+    ]) {
+      expect(() => parseEnv({ ...base, ...vercel })).toThrow(
+        /AUTH_SECRET and ENCRYPTION_KEY must be set/,
+      );
+      const env = parseEnv({
+        ...base,
+        ...vercel,
+        AUTH_SECRET: 'x'.repeat(40),
+        ENCRYPTION_KEY: KEY_A,
+      });
+      expect(env.isProduction).toBe(true);
+      expect(env.seedDemoData).toBe(false);
+      expect(env.seedAdminPasswordProvided).toBe(false);
+    }
+    // `vercel dev` on a developer machine keeps the development defaults.
+    const local = parseEnv({ ...base, VERCEL: '1', VERCEL_ENV: 'development' });
+    expect(local.isProduction).toBe(false);
+    expect(local.seedDemoData).toBe(true);
+  });
+
   it('rejects malformed values', () => {
     expect(() => parseEnv({ NODE_ENV: 'test' })).toThrow(EnvError);
     expect(() => parseEnv({ ...base, AUTH_SECRET: 'too-short' })).toThrow(/at least 32/);

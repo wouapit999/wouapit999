@@ -256,7 +256,7 @@ async function Executive({ ctx, range }: SectionProps) {
                 label: row.country,
                 value: Number(row.sentUsd),
                 display: usd(row.sentUsd),
-                hint: `${row.sent} transfers`,
+                hint: `${row.sent} transfer${row.sent === 1 ? '' : 's'}`,
               }))}
             />
           </CardBody>
@@ -509,7 +509,7 @@ async function Revenue({ ctx, range }: SectionProps) {
                 label: humanize(row.type),
                 value: Number(row.revenueUsd),
                 display: usd(row.revenueUsd),
-                hint: `${row.count} transfers`,
+                hint: `${row.count} transfer${row.count === 1 ? '' : 's'}`,
               }))}
             />
           </CardBody>
@@ -736,7 +736,7 @@ async function Treasury({ ctx, range }: SectionProps) {
               label: `${pair.sourceCurrency}/${pair.targetCurrency}`,
               value: Number(pair.fxMarginUsd),
               display: usd(pair.fxMarginUsd),
-              hint: `${pair.count} transfers`,
+              hint: `${pair.count} transfer${pair.count === 1 ? '' : 's'}`,
             }))}
           />
         </CardBody>

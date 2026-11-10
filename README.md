@@ -1,8 +1,10 @@
 # BI-Rem
 
 Pan-African remittance and mobile-money platform. This monorepo contains the **Phase 1
-foundation** (API, customer portal, admin portal, data layer, infrastructure) and the planning
-documentation for all 13 delivery phases.
+foundation** (API, customer portal, admin portal, data layer, infrastructure), the planning
+documentation for all 13 delivery phases, and **BI-Rem Lite** — the whole programme as one
+small web application that deploys today on GitHub + Vercel + Neon
+([what it is](#bi-rem-lite--the-programme-in-one-small-app)).
 
 [![CI](https://github.com/wouapit999/wouapit999/actions/workflows/ci.yml/badge.svg)](https://github.com/wouapit999/wouapit999/actions/workflows/ci.yml)
 [![Security](https://github.com/wouapit999/wouapit999/actions/workflows/security.yml/badge.svg)](https://github.com/wouapit999/wouapit999/actions/workflows/security.yml)
@@ -33,6 +35,32 @@ AML, audit) a licensed remittance operator needs. Target scale by go-live: 1 M u
 
 Per-phase scope, estimates and risks: `docs/phases/phase-NN-<key>.md`; master schedule:
 `docs/roadmap/schedule.json`.
+
+## BI-Rem Lite — the programme in one small app
+
+[`apps/lite`](apps/lite/README.md) reflects all 13 phases end to end in a single Next.js
+application: real sign-in, a real PostgreSQL database and real double-entry money movement
+between wallets, with the outside world (mobile-money operators, KYC vendors, sanctions data)
+simulated and labelled as such. It is self-contained — its own Prisma schema and database, no
+dependency on the Phase 1 workspaces — and it does not replace the roadmap: the phases above
+still deliver the production platform.
+
+| Read                                         | For                                                                         |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| [`apps/lite/README.md`](apps/lite/README.md) | What is in it, how to run it locally, demo accounts                         |
+| [`apps/lite/DEPLOY.md`](apps/lite/DEPLOY.md) | Deploying it: GitHub repository → Vercel project → Neon database            |
+| [`docs/lite/README.md`](docs/lite/README.md) | How it maps to the roadmap, what was verified per phase, limits, graduation |
+| [`apps/lite/SPEC.md`](apps/lite/SPEC.md)     | The binding scope and the money-movement rules                              |
+
+```bash
+createdb -h localhost -U birem birem_lite            # once; any PostgreSQL 15+ works
+cp apps/lite/.env.example apps/lite/.env
+pnpm --filter @bi-rem/lite generate && pnpm --filter @bi-rem/lite migrate:deploy
+pnpm --filter @bi-rem/lite seed && pnpm --filter @bi-rem/lite dev    # http://localhost:3002
+```
+
+Deployment is done by Vercel's Git integration on every push (Root Directory `apps/lite`);
+the `lite` job of the CI workflow rehearses the same install and build first.
 
 ## Architecture (Phase 1)
 
@@ -108,37 +136,42 @@ Seeded logins (local only): see `packages/db/.env.example` (`SEED_ADMIN_EMAIL`,
 
 ## Repository layout
 
-| Path                           | Package          | Purpose                                                                                                |
-| ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------ |
-| `apps/api`                     | `@bi-rem/api`    | NestJS 12 backend, port 4000, `dist/main.js`                                                           |
-| `apps/web`                     | `@bi-rem/web`    | Customer portal, Next.js 16 (`output: standalone`), port 3000                                          |
-| `apps/admin`                   | `@bi-rem/admin`  | Admin portal, Next.js 16, port 3001                                                                    |
-| `packages/db`                  | `@bi-rem/db`     | Prisma 7 schema v1, migrations, seed, `createPrismaClient()`                                           |
-| `packages/shared`              | `@bi-rem/shared` | Zod schemas, DTO types, enums, constants                                                               |
-| `packages/config`              | `@bi-rem/config` | Shared `tsconfig` and ESLint flat-config presets                                                       |
-| `infra/docker`                 | —                | Dockerfiles, docker-compose, Postgres init script                                                      |
-| `infra/fly`                    | —                | `api.fly.toml` + Fly deployment guide                                                                  |
-| `infra/vercel`                 | —                | Vercel project settings and env matrix for the portals                                                 |
-| `infra/aws`, `infra/terraform` | —                | ECS Fargate alternative with a Terraform skeleton                                                      |
-| `infra/ci`                     | —                | CI-only Prisma config (`shadowDatabaseUrl`) for the migration drift check                              |
-| `infra/scripts`                | —                | `bootstrap.sh`, `smoke-test.sh`, `deploy-api.sh`, `db-backup.sh`, `db-restore.sh`, `rotate-secrets.md` |
-| `.github/workflows`            | —                | CI, security scans, deploys, DB migrate, releases                                                      |
-| `docs/`                        | —                | Roadmap, phase plans, architecture notes                                                               |
+| Path                           | Package          | Purpose                                                                                                      |
+| ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------ |
+| `apps/api`                     | `@bi-rem/api`    | NestJS 12 backend, port 4000, `dist/main.js`                                                                 |
+| `apps/web`                     | `@bi-rem/web`    | Customer portal, Next.js 16 (`output: standalone`), port 3000                                                |
+| `apps/admin`                   | `@bi-rem/admin`  | Admin portal, Next.js 16, port 3001                                                                          |
+| `apps/lite`                    | `@bi-rem/lite`   | BI-Rem Lite: all 13 phases at small scale in one Next.js 16 app, port 3002; own Prisma schema; Vercel + Neon |
+| `packages/db`                  | `@bi-rem/db`     | Prisma 7 schema v1, migrations, seed, `createPrismaClient()`                                                 |
+| `packages/shared`              | `@bi-rem/shared` | Zod schemas, DTO types, enums, constants                                                                     |
+| `packages/config`              | `@bi-rem/config` | Shared `tsconfig` and ESLint flat-config presets                                                             |
+| `infra/docker`                 | —                | Dockerfiles, docker-compose, Postgres init script                                                            |
+| `infra/fly`                    | —                | `api.fly.toml` + Fly deployment guide                                                                        |
+| `infra/vercel`                 | —                | Vercel project settings and env matrix for the portals                                                       |
+| `infra/aws`, `infra/terraform` | —                | ECS Fargate alternative with a Terraform skeleton                                                            |
+| `infra/ci`                     | —                | CI-only Prisma config (`shadowDatabaseUrl`) for the migration drift check                                    |
+| `infra/scripts`                | —                | `bootstrap.sh`, `smoke-test.sh`, `deploy-api.sh`, `db-backup.sh`, `db-restore.sh`, `rotate-secrets.md`       |
+| `.github/workflows`            | —                | CI, security scans, deploys, DB migrate, releases                                                            |
+| `docs/`                        | —                | Roadmap, phase plans, architecture notes                                                                     |
 
 Conventions for contributors and coding agents: `CLAUDE.md`.
 
 ## CI/CD
 
-| Workflow                             | Trigger                                      | What it does                                                                                                                                                          |
-| ------------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                             | PR, push to `main`, merge queue              | lint, typecheck, unit + e2e tests (Postgres 17 + Redis 7 services), Prisma validate + migration drift check, build, infra lint; `ci-ok` is the single required status |
-| `security.yml`                       | PR, push, weekly                             | CodeQL, dependency review, gitleaks, `pnpm audit` report, Trivy scan of the API image                                                                                 |
-| `deploy-api.yml`                     | push `main` → staging, tag `v*` → production | GHCR image with SBOM + provenance, Fly deploy with `prisma migrate deploy` as release command, smoke test, rollback notes                                             |
-| `deploy-web.yml`, `deploy-admin.yml` | PR → preview, `main` → production            | Vercel CLI deploys (`pull` / `build` / `deploy --prebuilt`), PR comment with the preview URL                                                                          |
-| `db-migrate.yml`                     | manual                                       | `prisma migrate status` / `deploy` against staging or production, protected by GitHub Environments                                                                    |
-| `release.yml`                        | push `main`                                  | release-please release PR, changelog and `vX.Y.Z` tags from Conventional Commits                                                                                      |
+| Workflow                             | Trigger                                      | What it does                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                             | PR, push to `main`, merge queue              | lint, typecheck, unit + e2e tests (Postgres 17 + Redis 7 services), Prisma validate + migration drift check, build, infra lint, docs check, and the `lite` job (BI-Rem Lite on Postgres 16: Vercel install command, migrations, lint, typecheck, tests, deployment rehearsal, Playwright); `ci-ok` is the single required status |
+| `security.yml`                       | PR, push, weekly                             | CodeQL, dependency review, gitleaks, `pnpm audit` report, Trivy scan of the API image                                                                                                                                                                                                                                            |
+| `deploy-api.yml`                     | push `main` → staging, tag `v*` → production | GHCR image with SBOM + provenance, Fly deploy with `prisma migrate deploy` as release command, smoke test, rollback notes                                                                                                                                                                                                        |
+| `deploy-web.yml`, `deploy-admin.yml` | PR → preview, `main` → production            | Vercel CLI deploys (`pull` / `build` / `deploy --prebuilt`), PR comment with the preview URL                                                                                                                                                                                                                                     |
+| `db-migrate.yml`                     | manual                                       | `prisma migrate status` / `deploy` against staging or production, protected by GitHub Environments                                                                                                                                                                                                                               |
+| `release.yml`                        | push `main`                                  | release-please release PR, changelog and `vX.Y.Z` tags from Conventional Commits                                                                                                                                                                                                                                                 |
 
 GitHub Environments: `staging` (auto), `production` (required reviewers), `preview`.
+
+BI-Rem Lite has no deploy workflow: Vercel's Git integration builds and deploys `apps/lite` on
+every push (production branch → production, other branches → preview). See
+[`apps/lite/DEPLOY.md`](apps/lite/DEPLOY.md).
 
 ## Environments & secrets
 
@@ -167,13 +200,16 @@ GitHub Environments: `staging` (auto), `production` (required reviewers), `previ
   dependencies (open locally, or serve `docs/roadmap/` over HTTP to read the live data files)
 - Docs checker: `pnpm docs:check` (Mermaid render, relative links, phase dates, phase sections;
   also runs in CI as the `docs-check` job)
+- [BI-Rem Lite and the roadmap](docs/lite/README.md) — what the small-scale application covers
+  for each phase, the traceability table of what was verified, its limits, and how a feature
+  graduates to the full platform; deploy guide in [`apps/lite/DEPLOY.md`](apps/lite/DEPLOY.md)
 - `docs/roadmap/schedule.json` — master schedule (source of truth for dates)
 - `docs/phases/` — one plan per phase
 - `docs/architecture/` — architecture notes: `target-architecture.md`,
   `infrastructure-architecture.md`, `database-schema-v1.md`, `environment-management.md`,
   `monitoring-framework.md`, `security-baseline.md`, `phase-1-implementation-notes.md`
 - `infra/docker/README.md`, `infra/fly/README.md`, `infra/vercel/README.md`, `infra/aws/README.md`
-- `apps/api/README.md`, `packages/db/README.md`, `packages/shared/README.md`
+- `apps/api/README.md`, `apps/lite/README.md`, `packages/db/README.md`, `packages/shared/README.md`
 
 ## License
 

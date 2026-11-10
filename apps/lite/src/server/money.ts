@@ -130,6 +130,20 @@ export function parseMoney(input: string, currency: string): bigint {
   return BigInt(whole) * pow10(exponent) + BigInt(fraction.padEnd(exponent, '0') || '0');
 }
 
+/**
+ * Largest amount (minor units) a single movement may carry: 10^15. Far above any real transfer,
+ * low enough that pricing (rate × amount) and account balances stay inside Postgres `bigint` —
+ * without it one absurd cash-in could push a shared system account to the int8 limit and make
+ * every later posting in that currency fail.
+ */
+export const MAX_AMOUNT_MINOR = 1_000_000_000_000_000n;
+
+/** Throws VALIDATION unless `0 < amount ≤ MAX_AMOUNT_MINOR`. */
+export function assertAmountInRange(amount: bigint): void {
+  if (amount <= 0n) throw new AppError('VALIDATION', 'Amount must be greater than zero');
+  if (amount > MAX_AMOUNT_MINOR) throw new AppError('VALIDATION', 'Amount is too large');
+}
+
 /** Parses a minor-unit integer string (hidden form fields, API payloads). */
 export function parseMinor(input: string): bigint {
   if (!/^\d{1,18}$/.test(input.trim())) {

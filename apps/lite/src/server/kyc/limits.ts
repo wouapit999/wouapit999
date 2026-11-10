@@ -50,6 +50,8 @@ const startOfUtcDay = (now: Date): Date =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 const startOfUtcMonth = (now: Date): Date =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+const startOfNextUtcDay = (now: Date): Date =>
+  new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
 
 /** Limits and current usage of a user. Call inside the transfer transaction for consistency. */
 export async function getLimitUsage(
@@ -61,6 +63,11 @@ export async function getLimitUsage(
   const limits = (await getTierLimits(client))[tier];
   const dayStart = startOfUtcDay(now);
   const monthStart = startOfUtcMonth(now);
+  // The window closes at the end of `now`'s UTC day, not at `now` itself: `now` is taken when a
+  // request starts, before it queues for the sender's lock, so a parallel request that started
+  // later but committed first carries a later timestamp. Cutting at `now` made that transfer
+  // invisible and let parallel requests each spend the same remaining allowance.
+  const windowEnd = startOfNextUtcDay(now);
   const rows = await client.$queryRaw<UsageRow[]>`
     SELECT
       COALESCE(SUM(send_amount_usd) FILTER (WHERE created_at >= ${dayStart}), 0) AS today,
@@ -70,7 +77,7 @@ export async function getLimitUsage(
       AND type <> 'TOPUP'
       AND status IN ('PROCESSING', 'ON_HOLD', 'COMPLETED')
       AND created_at >= ${monthStart}
-      AND created_at <= ${now}`;
+      AND created_at < ${windowEnd}`;
   const usedToday = toBigInt(rows[0]?.today);
   const usedThisMonth = toBigInt(rows[0]?.month);
   const remaining = (limit: bigint, used: bigint): bigint => (limit > used ? limit - used : 0n);
@@ -159,4 +166,84 @@ export async function getLimitOverview(
       remainingThisMonth: await local(usage.remainingThisMonth),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Cash-in (top-up) limits
+// ---------------------------------------------------------------------------
+
+/**
+ * Cash-in allowance of a tier, derived from its send limits: one top-up (and one day of
+ * top-ups) may load at most what the tier can send in a month, and a month of top-ups at most
+ * three times that. Without it an unverified customer could load any amount — up to the range
+ * of the ledger itself — through the collection connector.
+ */
+export function cashInLimitsFor(limits: TierLimits): Omit<TierLimits, 'international'> {
+  return {
+    perTransaction: limits.monthly,
+    daily: limits.monthly,
+    monthly: limits.monthly * 3n,
+  };
+}
+
+/** Whose cash-in is measured: a customer (by KYC tier) or a partner (treated as tier 2). */
+export type CashInOwner =
+  { readonly userId: string; readonly tier: KycTier } | { readonly partnerId: string };
+
+/**
+ * Throws LIMIT_EXCEEDED / KYC_REQUIRED when a top-up of `amountUsd` would exceed the owner's
+ * cash-in allowance. Top-ups still in flight count. Call it inside the transaction that creates
+ * the top-up, after locking the wallet's ledger account, so parallel top-ups cannot each see
+ * the allowance as unused.
+ */
+export async function assertCashInWithinLimits(
+  client: DbOrTx,
+  input: { owner: CashInOwner; amountUsd: bigint; now?: Date },
+): Promise<void> {
+  const now = input.now ?? new Date();
+  const tier: KycTier = 'tier' in input.owner ? input.owner.tier : 'TIER_2';
+  const limits = cashInLimitsFor((await getTierLimits(client))[tier]);
+  const dayStart = startOfUtcDay(now);
+  const monthStart = startOfUtcMonth(now);
+  const windowEnd = startOfNextUtcDay(now); // see getLimitUsage: never cut the window at `now`
+  const rows =
+    'userId' in input.owner
+      ? await client.$queryRaw<UsageRow[]>`
+          SELECT
+            COALESCE(SUM(send_amount_usd) FILTER (WHERE created_at >= ${dayStart}), 0) AS today,
+            COALESCE(SUM(send_amount_usd), 0) AS month
+          FROM transfers
+          WHERE recipient_user_id = ${input.owner.userId}::uuid
+            AND type = 'TOPUP'
+            AND status IN ('PROCESSING', 'COMPLETED')
+            AND created_at >= ${monthStart}
+            AND created_at < ${windowEnd}`
+      : await client.$queryRaw<UsageRow[]>`
+          SELECT
+            COALESCE(SUM(send_amount_usd) FILTER (WHERE created_at >= ${dayStart}), 0) AS today,
+            COALESCE(SUM(send_amount_usd), 0) AS month
+          FROM transfers
+          WHERE sender_partner_id = ${input.owner.partnerId}::uuid
+            AND type = 'TOPUP'
+            AND status IN ('PROCESSING', 'COMPLETED')
+            AND created_at >= ${monthStart}
+            AND created_at < ${windowEnd}`;
+  const usedToday = toBigInt(rows[0]?.today);
+  const usedThisMonth = toBigInt(rows[0]?.month);
+  const code = tier === 'TIER_2' ? 'LIMIT_EXCEEDED' : 'KYC_REQUIRED';
+  const fail = (limit: 'perTransaction' | 'daily' | 'monthly', message: string): never => {
+    throw new AppError(limit === 'perTransaction' ? code : 'LIMIT_EXCEEDED', message, {
+      details: { limit, tier, kind: 'cashIn' },
+      fieldErrors: { amount: [message] },
+    });
+  };
+  if (input.amountUsd > limits.perTransaction) {
+    fail('perTransaction', `A single top-up is limited to about ${usd(limits.perTransaction)}`);
+  }
+  if (usedToday + input.amountUsd > limits.daily) {
+    fail('daily', `This exceeds your daily top-up limit of about ${usd(limits.daily)}`);
+  }
+  if (usedThisMonth + input.amountUsd > limits.monthly) {
+    fail('monthly', `This exceeds your monthly top-up limit of about ${usd(limits.monthly)}`);
+  }
 }

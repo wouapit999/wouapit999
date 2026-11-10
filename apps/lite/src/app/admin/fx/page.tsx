@@ -143,7 +143,7 @@ export default async function FxPage({ searchParams }: { searchParams: SearchPar
                           {rate.source === 'manual' ? 'Manual override' : rate.source}
                         </Badge>
                       </Td>
-                      <Td className="whitespace-nowrap">{formatDateTime(rate.updatedAt)}</Td>
+                      <Td className="text-fg-muted">{formatDateTime(rate.updatedAt)}</Td>
                       {canWrite ? (
                         <Td>
                           <LinkButton

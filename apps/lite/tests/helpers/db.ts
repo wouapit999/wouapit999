@@ -15,6 +15,18 @@ import { createDatabase, dropDatabase, urlForDatabase } from './pg-admin';
 export function withTestDatabase(): void {
   let name: string | undefined;
 
+  const admin = inject('testDbAdminUrl');
+  if (admin === '') {
+    // `vitest.config.ts` leaves database-backed files out when no server is reachable, so this
+    // only happens when a file was named explicitly on the command line.
+    throw new Error(
+      'This test file needs PostgreSQL and no server is reachable. Start Postgres or set ' +
+        'TEST_DATABASE_URL (see tests/helpers/test-database.ts).',
+    );
+  }
+  // Same server for the whole run, whatever DATABASE_URL becomes below.
+  process.env.TEST_DATABASE_ADMIN_URL = admin;
+
   beforeAll(async () => {
     name = `${inject('testDbPrefix')}${randomBytes(5).toString('hex')}`;
     await createDatabase(name, inject('testDbTemplate'));

@@ -20,7 +20,9 @@ export function Table({
 }) {
   return (
     <div className={cn('relative overflow-x-auto', className)}>
-      <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
+      {/* The 36rem floor keeps columns readable on a phone (the wrapper scrolls). From `lg` up
+          the table takes its natural width, so it also fits a half-width card. */}
+      <table className="w-full min-w-[36rem] border-collapse text-left text-sm lg:min-w-0">
         <caption className={showCaption ? 'px-4 py-2 text-left text-sm text-fg-muted' : 'sr-only'}>
           {caption}
         </caption>
@@ -60,7 +62,7 @@ export function Th({
     <th
       scope="col"
       className={cn(
-        'px-4 py-2.5 font-medium',
+        'px-3 py-2.5 font-medium first:pl-4 last:pr-4 2xl:px-4',
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         className,
@@ -81,7 +83,7 @@ export function Td({
   return (
     <td
       className={cn(
-        'px-4 py-3 align-middle',
+        'px-3 py-3 align-middle first:pl-4 last:pr-4 2xl:px-4',
         align === 'right' && 'tabular text-right',
         align === 'center' && 'text-center',
         className,

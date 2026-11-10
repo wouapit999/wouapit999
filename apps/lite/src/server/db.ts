@@ -25,10 +25,36 @@ interface GlobalWithPrisma {
 
 const globalForPrisma = globalThis as unknown as GlobalWithPrisma;
 
+const SSL_MODES_VERIFIED_BY_PG = new Set(['prefer', 'require', 'verify-ca']);
+
+/**
+ * Makes the TLS mode of a connection string explicit for the `pg` driver.
+ *
+ * Neon hands out URLs with `sslmode=require`. `pg` 8 treats `prefer`, `require` and `verify-ca`
+ * as `verify-full` (certificate and host name are checked) and prints a warning on every cold
+ * start that the next major version will stop doing so. Rewriting them to `verify-full` keeps
+ * today's behaviour — the strict one — silences the warning and survives the `pg` upgrade.
+ * A URL that opts into libpq semantics (`uselibpqcompat=true`) or has no `sslmode` (local
+ * Postgres) is returned unchanged, as is anything that is not a parsable URL.
+ */
+export function withExplicitSslMode(connectionString: string): string {
+  let url: URL;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    return connectionString;
+  }
+  const mode = url.searchParams.get('sslmode');
+  if (!mode || !SSL_MODES_VERIFIED_BY_PG.has(mode)) return connectionString;
+  if (url.searchParams.get('uselibpqcompat') === 'true') return connectionString;
+  url.searchParams.set('sslmode', 'verify-full');
+  return url.toString();
+}
+
 function createClient(url: string): PrismaClient {
   const env = getEnv();
   const adapter = new PrismaPg({
-    connectionString: url,
+    connectionString: withExplicitSslMode(url),
     max: env.databasePoolMax,
     idleTimeoutMillis: 20_000,
     connectionTimeoutMillis: 10_000,

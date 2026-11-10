@@ -1,3 +1,16 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# pnpm 10 runs a dependency's install scripts only when it is listed here. Prisma's download
+# its schema engine at install time (instead of on the first `prisma migrate deploy` of every
+# fresh build) and esbuild's checks its platform binary.
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - esbuild
+  - prisma
+
+# Chrome for mermaid-cli (docs:check) comes from the machine or CI's setup-chrome, never from
+# puppeteer's own download.
+ignoredBuiltDependencies:
+  - puppeteer
