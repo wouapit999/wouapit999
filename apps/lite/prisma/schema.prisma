@@ -1,0 +1,1291 @@
+// BI-Rem Lite — Prisma schema.
+//
+// Conventions (see SPEC.md / CLAUDE.md):
+// - IDs are uuid generated in Postgres via gen_random_uuid().
+// - All timestamps are timestamptz(6).
+// - Tables and columns are snake_case via @@map / @map; Prisma models stay PascalCase/camelCase.
+// - Money is BigInt minor units + ISO-4217 currency; FX rates are Decimal(24,10). Never floats.
+// - The datasource URL is configured in ../prisma.config.ts (Prisma 7).
+// - audit_logs, journals, ledger_entries and transfer_events are append-only (enforced by
+//   triggers created in the initial migration).
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  COMPLIANCE
+  TREASURY
+  SUPPORT
+  PARTNER
+
+  @@map("role")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+
+  @@map("user_status")
+}
+
+enum KycTier {
+  TIER_0
+  TIER_1
+  TIER_2
+
+  @@map("kyc_tier")
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+
+  @@map("kyc_status")
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+
+  @@map("risk_level")
+}
+
+enum KycCaseStatus {
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  RESUBMIT_REQUESTED
+
+  @@map("kyc_case_status")
+}
+
+enum KycIdType {
+  PASSPORT
+  NATIONAL_ID
+  DRIVERS_LICENSE
+  VOTER_CARD
+  RESIDENCE_PERMIT
+
+  @@map("kyc_id_type")
+}
+
+enum KycDocumentKind {
+  ID_FRONT
+  ID_BACK
+  SELFIE
+  PROOF_OF_ADDRESS
+
+  @@map("kyc_document_kind")
+}
+
+enum ProviderEnvironment {
+  SANDBOX
+  PRODUCTION
+
+  @@map("provider_environment")
+}
+
+enum ProviderStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+
+  @@map("provider_status")
+}
+
+enum HealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  DOWN
+
+  @@map("health_status")
+}
+
+enum ProviderSecretKind {
+  CREDENTIALS
+  WEBHOOK_SECRET
+
+  @@map("provider_secret_kind")
+}
+
+enum RailStatus {
+  PLANNED
+  ACTIVE
+
+  @@map("rail_status")
+}
+
+enum WalletType {
+  CUSTOMER
+  MERCHANT
+  AGENT
+  PARTNER
+
+  @@map("wallet_type")
+}
+
+enum WalletStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+
+  @@map("wallet_status")
+}
+
+enum LedgerAccountType {
+  WALLET
+  FEE_REVENUE
+  FX_REVENUE
+  FX_POSITION
+  SUSPENSE
+  SETTLEMENT
+  COMMISSION_EXPENSE
+  COMMISSION_PAYABLE
+  CAPITAL
+
+  @@map("ledger_account_type")
+}
+
+enum EntryDirection {
+  DEBIT
+  CREDIT
+
+  @@map("entry_direction")
+}
+
+enum JournalKind {
+  TRANSFER
+  RESERVE
+  RELEASE
+  REFUND
+  REVERSAL
+  TOPUP
+  COMMISSION
+  SETTLEMENT
+  ADJUSTMENT
+
+  @@map("journal_kind")
+}
+
+enum TransferType {
+  W2W
+  W2M
+  W2A
+  INTERNATIONAL
+  TOPUP
+
+  @@map("transfer_type")
+}
+
+enum TransferStatus {
+  PROCESSING
+  ON_HOLD
+  COMPLETED
+  FAILED
+  REJECTED
+  REVERSED
+
+  @@map("transfer_status")
+}
+
+enum DeliveryMethod {
+  WALLET
+  MOBILE_MONEY
+
+  @@map("delivery_method")
+}
+
+enum TransferChannel {
+  WEB
+  API
+  ADMIN
+  SEED
+
+  @@map("transfer_channel")
+}
+
+enum QuoteStatus {
+  ACTIVE
+  USED
+  EXPIRED
+
+  @@map("quote_status")
+}
+
+enum AmlRuleType {
+  AMOUNT_THRESHOLD
+  VELOCITY_COUNT
+  VELOCITY_VALUE
+  STRUCTURING
+  NEW_ACCOUNT_HIGH_VALUE
+  HIGH_RISK_CORRIDOR
+  SANCTIONS_MATCH
+
+  @@map("aml_rule_type")
+}
+
+enum AmlAction {
+  FLAG
+  HOLD
+
+  @@map("aml_action")
+}
+
+enum AmlAlertStatus {
+  OPEN
+  ESCALATED
+  DISMISSED
+  RESOLVED
+
+  @@map("aml_alert_status")
+}
+
+enum AmlCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  RELEASED
+  REJECTED
+  CLOSED
+
+  @@map("aml_case_status")
+}
+
+enum SarStatus {
+  DRAFT
+  FILED
+
+  @@map("sar_status")
+}
+
+enum SanctionsEntryType {
+  SANCTION
+  PEP
+
+  @@map("sanctions_entry_type")
+}
+
+enum PartnerType {
+  PARTNER
+  MERCHANT
+  AGENT
+
+  @@map("partner_type")
+}
+
+enum PartnerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+
+  @@map("partner_status")
+}
+
+enum CommissionStatus {
+  ACCRUED
+  SETTLED
+  REVERSED
+
+  @@map("commission_status")
+}
+
+enum SettlementStatus {
+  PENDING
+  PAID
+
+  @@map("settlement_status")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+
+  @@map("webhook_delivery_status")
+}
+
+enum ProviderWebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+
+  @@map("provider_webhook_status")
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+
+  @@map("audit_outcome")
+}
+
+enum AuditActorType {
+  USER
+  API_KEY
+  SYSTEM
+
+  @@map("audit_actor_type")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 — identity, sessions, audit, notifications, settings
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String     @unique
+  phone        String?    @unique
+  passwordHash String     @map("password_hash")
+  fullName     String     @map("full_name")
+  role         Role       @default(CUSTOMER)
+  status       UserStatus @default(ACTIVE)
+  countryCode  String?    @map("country_code") @db.Char(2)
+  dateOfBirth  DateTime?  @map("date_of_birth") @db.Date
+  addressLine  String?    @map("address_line")
+  city         String?
+  occupation   String?
+
+  kycTier   KycTier   @default(TIER_0) @map("kyc_tier")
+  kycStatus KycStatus @default(NONE) @map("kyc_status")
+
+  riskScore      Int       @default(0) @map("risk_score")
+  riskLevel      RiskLevel @default(LOW) @map("risk_level")
+  riskFactors    Json?     @map("risk_factors")
+  riskAssessedAt DateTime? @map("risk_assessed_at") @db.Timestamptz(6)
+  pepMatch       Boolean   @default(false) @map("pep_match")
+  sanctionsMatch Boolean   @default(false) @map("sanctions_match")
+
+  mfaEnabled   Boolean   @default(false) @map("mfa_enabled")
+  mfaSecretEnc String?   @map("mfa_secret_enc")
+  mfaEnabledAt DateTime? @map("mfa_enabled_at") @db.Timestamptz(6)
+
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz(6)
+
+  partnerId String? @map("partner_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  country       Country?       @relation(fields: [countryCode], references: [code])
+  partner       Partner?       @relation(fields: [partnerId], references: [id])
+  sessions      Session[]
+  kycCases      KycCase[]      @relation("KycCaseUser")
+  kycDocuments  KycDocument[]
+  beneficiaries Beneficiary[]
+  wallets       Wallet[]
+  notifications Notification[]
+  sentTransfers Transfer[]     @relation("TransferSender")
+  recvTransfers Transfer[]     @relation("TransferRecipient")
+  quotes        Quote[]
+  amlAlerts     AmlAlert[]
+  amlCases      AmlCase[]      @relation("AmlCaseSubject")
+
+  @@index([role])
+  @@index([status])
+  @@index([kycStatus])
+  @@index([countryCode])
+  @@index([partnerId])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Session {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  ip          String?
+  userAgent   String?   @map("user_agent")
+  mfaVerified Boolean   @default(false) @map("mfa_verified")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model LoginAttempt {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String
+  userId    String?  @map("user_id") @db.Uuid
+  ip        String?
+  success   Boolean
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+/// Fixed-window counters for database-backed rate limiting (auth, public API).
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime @map("window_start") @db.Timestamptz(6)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("rate_limit_buckets")
+}
+
+/// Append-only (UPDATE/DELETE rejected by trigger).
+model AuditLog {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorType    AuditActorType @default(USER) @map("actor_type")
+  actorId      String?        @map("actor_id") @db.Uuid
+  actorLabel   String?        @map("actor_label")
+  actorRole    String?        @map("actor_role")
+  action       String
+  resourceType String         @map("resource_type")
+  resourceId   String?        @map("resource_id")
+  outcome      AuditOutcome   @default(SUCCESS)
+  before       Json?
+  after        Json?
+  metadata     Json?
+  ip           String?
+  userAgent    String?        @map("user_agent")
+  requestId    String?        @map("request_id")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String
+  title     String
+  body      String
+  href      String?
+  data      Json?
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+model Setting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("settings")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — KYC, beneficiaries
+// ---------------------------------------------------------------------------
+
+model KycCase {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  status         KycCaseStatus @default(SUBMITTED)
+  targetTier     KycTier       @map("target_tier")
+  vendor         String
+  vendorRef      String?       @map("vendor_ref")
+  vendorDecision String?       @map("vendor_decision")
+  vendorScore    Int?          @map("vendor_score")
+  vendorResult   Json?         @map("vendor_result")
+  idType         KycIdType     @map("id_type")
+  idNumber       String        @map("id_number")
+  idCountry      String        @map("id_country") @db.Char(2)
+  reviewerId     String?       @map("reviewer_id") @db.Uuid
+  reviewNote     String?       @map("review_note")
+  submittedAt    DateTime      @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  decidedAt      DateTime?     @map("decided_at") @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User          @relation("KycCaseUser", fields: [userId], references: [id], onDelete: Cascade)
+  documents KycDocument[]
+
+  @@index([userId])
+  @@index([status, submittedAt])
+  @@map("kyc_cases")
+}
+
+model KycDocument {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId    String          @map("case_id") @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  kind      KycDocumentKind
+  fileName  String          @map("file_name")
+  mimeType  String          @map("mime_type")
+  size      Int
+  sha256    String          @db.Char(64)
+  data      Bytes
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  case KycCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([userId])
+  @@map("kyc_documents")
+}
+
+model Beneficiary {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  fullName      String         @map("full_name")
+  nickname      String?
+  countryCode   String         @map("country_code") @db.Char(2)
+  currency      String         @db.Char(3)
+  method        DeliveryMethod
+  /// MOBILE_MONEY: operator account (phone). WALLET: the BI-Rem phone/e-mail/merchant code.
+  accountNumber String         @map("account_number")
+  providerId    String?        @map("provider_id") @db.Uuid
+  relationship  String?
+  archivedAt    DateTime?      @map("archived_at") @db.Timestamptz(6)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  country   Country    @relation(fields: [countryCode], references: [code])
+  provider  Provider?  @relation(fields: [providerId], references: [id])
+  transfers Transfer[]
+
+  @@index([userId])
+  @@map("beneficiaries")
+}
+
+// ---------------------------------------------------------------------------
+// Phases 3, 4, 13 — countries, rails, providers, connectivity
+// ---------------------------------------------------------------------------
+
+model Country {
+  code      String    @id @db.Char(2)
+  name      String
+  region    String
+  currency  String    @db.Char(3)
+  dialCode  String    @map("dial_code")
+  enabled   Boolean   @default(false)
+  /// "core" (launch corridors) or "expansion" (phase 13, planned).
+  stage     String    @default("core")
+  riskLevel RiskLevel @default(LOW) @map("risk_level")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users         User[]
+  providers     Provider[]
+  beneficiaries Beneficiary[]
+
+  @@index([enabled])
+  @@map("countries")
+}
+
+/// Planned (or active) payment rails / aggregators beyond mobile-money providers.
+model Rail {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String     @unique
+  name        String
+  category    String
+  status      RailStatus @default(PLANNED)
+  description String?
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("rails")
+}
+
+model Provider {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                 String              @unique
+  name                 String
+  operator             String
+  countryCode          String              @map("country_code") @db.Char(2)
+  currency             String              @db.Char(3)
+  /// Adapter key in the connector registry: "simulator" | "http".
+  adapter              String              @default("simulator")
+  environment          ProviderEnvironment @default(SANDBOX)
+  baseUrl              String?             @map("base_url")
+  callbackUrl          String?             @map("callback_url")
+  /// Non-secret adapter configuration (paths, header names…). Never put credentials here.
+  config               Json?
+  /// Current version numbers; ciphertexts live in provider_secrets.
+  credentialsVersion   Int                 @default(0) @map("credentials_version")
+  webhookSecretVersion Int                 @default(0) @map("webhook_secret_version")
+  status               ProviderStatus      @default(ACTIVE)
+  healthStatus         HealthStatus        @default(UNKNOWN) @map("health_status")
+  lastHealthCheckAt    DateTime?           @map("last_health_check_at") @db.Timestamptz(6)
+  lastLatencyMs        Int?                @map("last_latency_ms")
+  supportsPayout       Boolean             @default(true) @map("supports_payout")
+  supportsCollection   Boolean             @default(true) @map("supports_collection")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  country       Country                @relation(fields: [countryCode], references: [code])
+  secrets       ProviderSecret[]
+  healthChecks  ProviderHealthCheck[]
+  webhookEvents ProviderWebhookEvent[]
+  transfers     Transfer[]
+  beneficiaries Beneficiary[]
+
+  @@index([countryCode])
+  @@index([status])
+  @@map("providers")
+}
+
+/// Encrypted provider secrets with rotation history. Plaintext is never stored or returned.
+model ProviderSecret {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId  String             @map("provider_id") @db.Uuid
+  kind        ProviderSecretKind
+  version     Int
+  /// AES-256-GCM envelope `v<keyVersion>.<iv>.<tag>.<ciphertext>` (base64url parts).
+  ciphertext  String
+  keyVersion  Int                @map("key_version")
+  /// Non-sensitive hint for the UI (e.g. credential field names, "••••1a2b").
+  hint        String?
+  createdById String?            @map("created_by_id") @db.Uuid
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  retiredAt   DateTime?          @map("retired_at") @db.Timestamptz(6)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, kind, version])
+  @@map("provider_secrets")
+}
+
+model ProviderHealthCheck {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId  String       @map("provider_id") @db.Uuid
+  status      HealthStatus
+  latencyMs   Int?         @map("latency_ms")
+  message     String?
+  checkedById String?      @map("checked_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+  @@map("provider_health_checks")
+}
+
+/// Inbound provider webhooks; (provider_id, event_id) is unique for replay protection.
+model ProviderWebhookEvent {
+  id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId  String                @map("provider_id") @db.Uuid
+  eventId     String                @map("event_id")
+  eventType   String                @map("event_type")
+  payload     Json
+  status      ProviderWebhookStatus @default(RECEIVED)
+  error       String?
+  transferId  String?               @map("transfer_id") @db.Uuid
+  receivedAt  DateTime              @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt DateTime?             @map("processed_at") @db.Timestamptz(6)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, eventId])
+  @@index([receivedAt])
+  @@map("provider_webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — wallets, double-entry ledger
+// ---------------------------------------------------------------------------
+
+model Wallet {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type            WalletType   @default(CUSTOMER)
+  status          WalletStatus @default(ACTIVE)
+  currency        String       @db.Char(3)
+  userId          String?      @map("user_id") @db.Uuid
+  partnerId       String?      @map("partner_id") @db.Uuid
+  ledgerAccountId String       @unique @map("ledger_account_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User?         @relation(fields: [userId], references: [id])
+  partner       Partner?      @relation(fields: [partnerId], references: [id])
+  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+  sent          Transfer[]    @relation("TransferSenderWallet")
+  received      Transfer[]    @relation("TransferRecipientWallet")
+
+  @@unique([userId, currency])
+  @@unique([partnerId, currency])
+  @@map("wallets")
+}
+
+model LedgerAccount {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Stable code: `SYS:<TYPE>:<CCY>` for system accounts, `WAL:<walletId>` for wallets.
+  code          String            @unique
+  name          String
+  type          LedgerAccountType
+  currency      String            @db.Char(3)
+  /// Side that increases `balance` (DEBIT for assets/expenses, CREDIT for liabilities/revenue).
+  normalSide    EntryDirection    @map("normal_side")
+  balance       BigInt            @default(0)
+  /// Wallets are never allowed below zero; system accounts may be.
+  allowNegative Boolean           @default(false) @map("allow_negative")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  wallet    Wallet?
+  entries   LedgerEntry[]
+  threshold TreasuryThreshold?
+
+  @@index([type, currency])
+  @@map("ledger_accounts")
+}
+
+/// Low-liquidity thresholds for settlement/float accounts (treasury dashboard).
+model TreasuryThreshold {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId       String   @unique @map("account_id") @db.Uuid
+  lowBalance      BigInt   @map("low_balance")
+  criticalBalance BigInt   @map("critical_balance")
+  updatedById     String?  @map("updated_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("treasury_thresholds")
+}
+
+/// Append-only. A journal is balanced per currency: sum(debits) = sum(credits).
+model Journal {
+  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind              JournalKind
+  description       String
+  transferId        String?     @map("transfer_id") @db.Uuid
+  reversesJournalId String?     @unique @map("reverses_journal_id") @db.Uuid
+  createdById       String?     @map("created_by_id") @db.Uuid
+  metadata          Json?
+  postedAt          DateTime    @default(now()) @map("posted_at") @db.Timestamptz(6)
+
+  transfer Transfer?     @relation(fields: [transferId], references: [id])
+  reverses Journal?      @relation("JournalReversal", fields: [reversesJournalId], references: [id])
+  reversal Journal?      @relation("JournalReversal")
+  entries  LedgerEntry[]
+
+  @@index([transferId])
+  @@index([postedAt])
+  @@map("journals")
+}
+
+/// Append-only.
+model LedgerEntry {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journalId    String         @map("journal_id") @db.Uuid
+  accountId    String         @map("account_id") @db.Uuid
+  direction    EntryDirection
+  amount       BigInt
+  currency     String         @db.Char(3)
+  balanceAfter BigInt         @map("balance_after")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  journal Journal       @relation(fields: [journalId], references: [id])
+  account LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([journalId])
+  @@index([accountId, createdAt])
+  @@map("ledger_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Phases 5, 6, 7 — fees, FX, quotes, transfers
+// ---------------------------------------------------------------------------
+
+model FeeRule {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Stable key used by the seed to upsert.
+  code          String        @unique
+  name          String
+  /// null = any transfer type.
+  transferType  TransferType? @map("transfer_type")
+  /// Source currency the fee is charged in (fixed/min/max amounts are in this currency).
+  currency      String        @db.Char(3)
+  /// null = any.
+  sourceCountry String?       @map("source_country") @db.Char(2)
+  targetCountry String?       @map("target_country") @db.Char(2)
+  fixedAmount   BigInt        @default(0) @map("fixed_amount")
+  percentBps    Int           @default(0) @map("percent_bps")
+  minFee        BigInt?       @map("min_fee")
+  /// Cap.
+  maxFee        BigInt?       @map("max_fee")
+  priority      Int           @default(0)
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([currency, active])
+  @@map("fee_rules")
+}
+
+model FxRate {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  baseCurrency  String   @map("base_currency") @db.Char(3)
+  quoteCurrency String   @map("quote_currency") @db.Char(3)
+  /// Units of quote currency per 1 unit of base currency (major units).
+  midRate       Decimal  @map("mid_rate") @db.Decimal(24, 10)
+  marginBps     Int      @default(150) @map("margin_bps")
+  /// "seed" | "manual" | feed name.
+  source        String   @default("seed")
+  updatedById   String?  @map("updated_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([baseCurrency, quoteCurrency])
+  @@map("fx_rates")
+}
+
+/// A priced transfer offer; international quotes lock the FX rate until `expiresAt`.
+model Quote {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String?        @map("user_id") @db.Uuid
+  partnerId      String?        @map("partner_id") @db.Uuid
+  type           TransferType
+  deliveryMethod DeliveryMethod @map("delivery_method")
+  sourceCountry  String         @map("source_country") @db.Char(2)
+  targetCountry  String         @map("target_country") @db.Char(2)
+  sourceCurrency String         @map("source_currency") @db.Char(3)
+  targetCurrency String         @map("target_currency") @db.Char(3)
+  sendAmount     BigInt         @map("send_amount")
+  feeAmount      BigInt         @map("fee_amount")
+  fxMarginAmount BigInt         @map("fx_margin_amount")
+  totalDebit     BigInt         @map("total_debit")
+  receiveAmount  BigInt         @map("receive_amount")
+  midRate        Decimal        @map("mid_rate") @db.Decimal(24, 10)
+  customerRate   Decimal        @map("customer_rate") @db.Decimal(24, 10)
+  marginBps      Int            @map("margin_bps")
+  feeRuleId      String?        @map("fee_rule_id") @db.Uuid
+  status         QuoteStatus    @default(ACTIVE)
+  expiresAt      DateTime       @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  usedAt         DateTime?      @map("used_at") @db.Timestamptz(6)
+
+  user     User?     @relation(fields: [userId], references: [id])
+  transfer Transfer?
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("quotes")
+}
+
+model Transfer {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reference      String          @unique
+  type           TransferType
+  status         TransferStatus
+  deliveryMethod DeliveryMethod  @map("delivery_method")
+  channel        TransferChannel @default(WEB)
+
+  senderUserId      String? @map("sender_user_id") @db.Uuid
+  senderPartnerId   String? @map("sender_partner_id") @db.Uuid
+  senderWalletId    String? @map("sender_wallet_id") @db.Uuid
+  recipientUserId   String? @map("recipient_user_id") @db.Uuid
+  recipientWalletId String? @map("recipient_wallet_id") @db.Uuid
+  beneficiaryId     String? @map("beneficiary_id") @db.Uuid
+  senderName        String  @map("sender_name")
+  recipientName     String  @map("recipient_name")
+  /// Phone / e-mail / merchant code / operator account the money was sent to.
+  recipientAccount  String  @map("recipient_account")
+
+  providerId  String? @map("provider_id") @db.Uuid
+  providerRef String? @map("provider_ref")
+
+  sourceCountry  String  @map("source_country") @db.Char(2)
+  targetCountry  String  @map("target_country") @db.Char(2)
+  sourceCurrency String  @map("source_currency") @db.Char(3)
+  targetCurrency String  @map("target_currency") @db.Char(3)
+  sendAmount     BigInt  @map("send_amount")
+  feeAmount      BigInt  @map("fee_amount")
+  fxMarginAmount BigInt  @default(0) @map("fx_margin_amount")
+  totalDebit     BigInt  @map("total_debit")
+  receiveAmount  BigInt  @map("receive_amount")
+  midRate        Decimal @map("mid_rate") @db.Decimal(24, 10)
+  customerRate   Decimal @map("customer_rate") @db.Decimal(24, 10)
+  marginBps      Int     @default(0) @map("margin_bps")
+  /// USD cents at creation (mid rate) — used for KYC limits, AML thresholds and reporting.
+  sendAmountUsd  BigInt  @map("send_amount_usd")
+  /// Fee + FX margin in USD cents at creation.
+  revenueUsd     BigInt  @default(0) @map("revenue_usd")
+  quoteId        String? @unique @map("quote_id") @db.Uuid
+
+  purpose       String?
+  sourceOfFunds String? @map("source_of_funds")
+  note          String?
+
+  /// Partner earning commission on this transfer (merchant/agent recipient or API sender).
+  partnerId        String? @map("partner_id") @db.Uuid
+  commissionAmount BigInt  @default(0) @map("commission_amount")
+
+  /// `user:<id>` or `partner:<id>`; (scope, key) is unique.
+  idempotencyScope String @map("idempotency_scope")
+  idempotencyKey   String @map("idempotency_key")
+
+  amlScore      Int     @default(0) @map("aml_score")
+  amlFlags      Json?   @map("aml_flags")
+  failureCode   String? @map("failure_code")
+  failureReason String? @map("failure_reason")
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  reversedAt  DateTime? @map("reversed_at") @db.Timestamptz(6)
+
+  sender          User?           @relation("TransferSender", fields: [senderUserId], references: [id])
+  recipient       User?           @relation("TransferRecipient", fields: [recipientUserId], references: [id])
+  senderPartner   Partner?        @relation("TransferSenderPartner", fields: [senderPartnerId], references: [id])
+  senderWallet    Wallet?         @relation("TransferSenderWallet", fields: [senderWalletId], references: [id])
+  recipientWallet Wallet?         @relation("TransferRecipientWallet", fields: [recipientWalletId], references: [id])
+  beneficiary     Beneficiary?    @relation(fields: [beneficiaryId], references: [id])
+  provider        Provider?       @relation(fields: [providerId], references: [id])
+  partner         Partner?        @relation("TransferCommissionPartner", fields: [partnerId], references: [id])
+  quote           Quote?          @relation(fields: [quoteId], references: [id])
+  events          TransferEvent[]
+  journals        Journal[]
+  commissions     Commission[]
+  amlAlerts       AmlAlert[]
+  amlCases        AmlCase[]
+
+  @@unique([idempotencyScope, idempotencyKey])
+  @@index([senderUserId, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@index([senderPartnerId, createdAt])
+  @@index([partnerId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([providerId, providerRef])
+  @@map("transfers")
+}
+
+/// Append-only timeline.
+model TransferEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transferId String   @map("transfer_id") @db.Uuid
+  type       String
+  message    String
+  data       Json?
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  transfer Transfer @relation(fields: [transferId], references: [id])
+
+  @@index([transferId, createdAt])
+  @@map("transfer_events")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 — AML, fraud, sanctions
+// ---------------------------------------------------------------------------
+
+model AmlRule {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String      @unique
+  name        String
+  description String
+  type        AmlRuleType
+  /// Rule parameters (see src/server/aml/rules.ts for the schema per type).
+  params      Json
+  severity    RiskLevel   @default(MEDIUM)
+  score       Int         @default(20)
+  action      AmlAction   @default(FLAG)
+  enabled     Boolean     @default(true)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("aml_rules")
+}
+
+model AmlAlert {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String?        @map("user_id") @db.Uuid
+  transferId   String?        @map("transfer_id") @db.Uuid
+  caseId       String?        @map("case_id") @db.Uuid
+  ruleCode     String         @map("rule_code")
+  ruleType     AmlRuleType    @map("rule_type")
+  severity     RiskLevel
+  score        Int
+  action       AmlAction
+  message      String
+  details      Json?
+  status       AmlAlertStatus @default(OPEN)
+  resolvedById String?        @map("resolved_by_id") @db.Uuid
+  resolvedAt   DateTime?      @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User?     @relation(fields: [userId], references: [id])
+  transfer Transfer? @relation(fields: [transferId], references: [id])
+  case     AmlCase?  @relation(fields: [caseId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@index([transferId])
+  @@index([caseId])
+  @@map("aml_alerts")
+}
+
+model AmlCase {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reference     String        @unique
+  subjectUserId String?       @map("subject_user_id") @db.Uuid
+  transferId    String?       @map("transfer_id") @db.Uuid
+  status        AmlCaseStatus @default(OPEN)
+  priority      RiskLevel     @default(MEDIUM)
+  summary       String
+  assignedToId  String?       @map("assigned_to_id") @db.Uuid
+  openedById    String?       @map("opened_by_id") @db.Uuid
+  resolution    String?
+  closedById    String?       @map("closed_by_id") @db.Uuid
+  closedAt      DateTime?     @map("closed_at") @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  subject  User?         @relation("AmlCaseSubject", fields: [subjectUserId], references: [id])
+  transfer Transfer?     @relation(fields: [transferId], references: [id])
+  alerts   AmlAlert[]
+  notes    AmlCaseNote[]
+  sars     SarReport[]
+
+  @@index([status, createdAt])
+  @@index([subjectUserId])
+  @@index([transferId])
+  @@map("aml_cases")
+}
+
+model AmlCaseNote {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId     String   @map("case_id") @db.Uuid
+  authorId   String?  @map("author_id") @db.Uuid
+  authorName String   @map("author_name")
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  case AmlCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("aml_case_notes")
+}
+
+/// Suspicious activity report: DRAFT → FILED (with regulator reference).
+model SarReport {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId      String    @map("case_id") @db.Uuid
+  status      SarStatus @default(DRAFT)
+  narrative   String
+  /// Filing reference returned by / recorded for the regulator (set when FILED).
+  reference   String?   @unique
+  regulator   String?
+  createdById String?   @map("created_by_id") @db.Uuid
+  filedById   String?   @map("filed_by_id") @db.Uuid
+  filedAt     DateTime? @map("filed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  case AmlCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([status])
+  @@map("sar_reports")
+}
+
+/// Demo screening list (fictional names). NOT a real sanctions/PEP list.
+model SanctionsEntry {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Stable key used by the seed to upsert.
+  code           String             @unique
+  listName       String             @map("list_name")
+  type           SanctionsEntryType
+  name           String
+  normalizedName String             @map("normalized_name")
+  aliases        String[]           @default([])
+  countryCode    String?            @map("country_code") @db.Char(2)
+  notes          String?
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([active])
+  @@map("sanctions_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 — partners, merchants, agents, public API
+// ---------------------------------------------------------------------------
+
+model Partner {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Public code customers pay to, e.g. `M-482913` (merchant), `A-553201` (agent), `P-…`.
+  code          String        @unique
+  type          PartnerType
+  name          String
+  legalName     String?       @map("legal_name")
+  countryCode   String        @map("country_code") @db.Char(2)
+  currency      String        @db.Char(3)
+  contactEmail  String        @map("contact_email")
+  contactPhone  String?       @map("contact_phone")
+  website       String?
+  description   String?
+  status        PartnerStatus @default(PENDING)
+  commissionBps Int           @default(0) @map("commission_bps")
+  reviewedById  String?       @map("reviewed_by_id") @db.Uuid
+  reviewNote    String?       @map("review_note")
+  approvedAt    DateTime?     @map("approved_at") @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users               User[]
+  wallets             Wallet[]
+  apiKeys             ApiKey[]
+  webhookEndpoints    WebhookEndpoint[]
+  commissions         Commission[]
+  settlements         Settlement[]
+  sentTransfers       Transfer[]        @relation("TransferSenderPartner")
+  commissionTransfers Transfer[]        @relation("TransferCommissionPartner")
+
+  @@index([type, status])
+  @@map("partners")
+}
+
+model ApiKey {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId   String    @map("partner_id") @db.Uuid
+  name        String
+  /// First characters of the key, shown in the UI to identify it.
+  prefix      String    @unique
+  /// sha256 of the full key. The key itself is shown once and never stored.
+  keyHash     String    @unique @map("key_hash") @db.Char(64)
+  scopes      String[]  @default([])
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId   String   @map("partner_id") @db.Uuid
+  url         String
+  description String?
+  /// AES-256-GCM envelope of the signing secret (shown once at creation).
+  secretEnc   String   @map("secret_enc")
+  events      String[] @default([])
+  active      Boolean  @default(true)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  partner    Partner           @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([partnerId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  endpointId     String                @map("endpoint_id") @db.Uuid
+  eventId        String                @map("event_id") @db.Uuid
+  eventType      String                @map("event_type")
+  payload        Json
+  /// `t=<unix>,v1=<hex hmac-sha256>` — the header value that was sent.
+  signature      String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  responseStatus Int?                  @map("response_status")
+  responseBody   String?               @map("response_body")
+  error          String?
+  durationMs     Int?                  @map("duration_ms")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?             @map("delivered_at") @db.Timestamptz(6)
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+model Commission {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId    String           @map("partner_id") @db.Uuid
+  transferId   String           @map("transfer_id") @db.Uuid
+  currency     String           @db.Char(3)
+  amount       BigInt
+  bps          Int
+  status       CommissionStatus @default(ACCRUED)
+  settlementId String?          @map("settlement_id") @db.Uuid
+  journalId    String?          @map("journal_id") @db.Uuid
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  partner    Partner     @relation(fields: [partnerId], references: [id])
+  transfer   Transfer    @relation(fields: [transferId], references: [id])
+  settlement Settlement? @relation(fields: [settlementId], references: [id])
+
+  @@unique([partnerId, transferId])
+  @@index([partnerId, status])
+  @@index([settlementId])
+  @@map("commissions")
+}
+
+model Settlement {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reference       String           @unique
+  partnerId       String           @map("partner_id") @db.Uuid
+  currency        String           @db.Char(3)
+  amount          BigInt
+  commissionCount Int              @map("commission_count")
+  status          SettlementStatus @default(PENDING)
+  periodStart     DateTime?        @map("period_start") @db.Timestamptz(6)
+  periodEnd       DateTime?        @map("period_end") @db.Timestamptz(6)
+  journalId       String?          @map("journal_id") @db.Uuid
+  createdById     String?          @map("created_by_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  paidAt          DateTime?        @map("paid_at") @db.Timestamptz(6)
+
+  partner     Partner      @relation(fields: [partnerId], references: [id])
+  commissions Commission[]
+
+  @@index([partnerId, createdAt])
+  @@map("settlements")
+}

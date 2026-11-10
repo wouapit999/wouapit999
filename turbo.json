@@ -6,12 +6,12 @@
   "tasks": {
     "generate": {
       "cache": false,
-      "outputs": ["generated/**"]
+      "outputs": ["generated/**", "src/generated/**"]
     },
     "build": {
       "dependsOn": ["^build", "^generate", "generate"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
-      "env": ["DATABASE_URL", "NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_APP_NAME"]
+      "env": ["DATABASE_URL", "NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_APP_NAME", "NEXT_DIST_DIR"]
     },
     "dev": {
       "cache": false,
@@ -26,11 +26,22 @@
     },
     "test": {
       "dependsOn": ["^build", "^generate", "generate"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "env": ["TEST_DATABASE_ADMIN_URL"]
     },
     "test:e2e": {
       "dependsOn": ["build"],
-      "cache": false
+      "cache": false,
+      "env": [
+        "E2E_BASE_URL",
+        "E2E_PASSWORD",
+        "E2E_PORT",
+        "E2E_DATABASE_NAME",
+        "E2E_SKIP_BUILD",
+        "E2E_KEEP_DATABASE",
+        "TEST_DATABASE_ADMIN_URL"
+      ],
+      "passThroughEnv": ["PLAYWRIGHT_BROWSERS_PATH", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"]
     },
     "seed": {
       "cache": false,
@@ -41,7 +52,11 @@
         "SEED_ADMIN_EMAIL",
         "SEED_ADMIN_PASSWORD",
         "SEED_CUSTOMER_EMAIL",
-        "SEED_CUSTOMER_PASSWORD"
+        "SEED_CUSTOMER_PASSWORD",
+        "DATABASE_URL_UNPOOLED",
+        "SEED_DEMO_DATA",
+        "AUTH_SECRET",
+        "ENCRYPTION_KEY"
       ]
     },
     "clean": {

@@ -95,6 +95,8 @@ jobs:
         run: pnpm db:migrate
       - name: Unit tests
         run: pnpm test
+      - name: Install Chromium for the BI-Rem Lite end-to-end suite
+        run: pnpm --filter @bi-rem/lite exec playwright install --with-deps chromium
       - name: End-to-end tests
         run: pnpm test:e2e
       - name: Upload coverage
@@ -105,6 +107,14 @@ jobs:
           path: |
             apps/*/coverage
             packages/*/coverage
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload BI-Rem Lite end-to-end traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lite-e2e-traces
+          path: apps/lite/test-results
           if-no-files-found: ignore
           retention-days: 7
 

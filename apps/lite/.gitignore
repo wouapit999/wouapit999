@@ -1,0 +1,12 @@
+next-env.d.ts
+.next/
+.next-*/
+.vercel/
+src/generated/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+test-results/
+tests/e2e/.auth/
