@@ -74,7 +74,7 @@ jobs:
       run:
         working-directory: apps/${{ inputs.app }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # turbo-ignore compares against the previous commit
 
@@ -146,7 +146,7 @@ jobs:
 
       - name: Comment preview URL on the PR
         if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: vercel-${{ inputs.app }}
           message: |
