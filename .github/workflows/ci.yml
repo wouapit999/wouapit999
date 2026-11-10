@@ -218,11 +218,36 @@ jobs:
           terraform_wrapper: false
       - run: terraform fmt -check -diff -recursive infra/terraform
 
+  docs-check:
+    name: Docs check (Mermaid render, links, phase dates, sections)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # pnpm 10 does not run puppeteer's postinstall; Chrome comes from setup-chrome below.
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          turbo-cache-key: docs-check
+      - name: Install Chrome for mermaid-cli
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+      - name: pnpm docs:check
+        # check-docs.mjs reads CHROME_PATH / PUPPETEER_EXECUTABLE_PATH for the mmdc browser.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          PUPPETEER_EXECUTABLE_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: pnpm docs:check
+
   ci-ok:
     # Single required status check for branch protection: "CI / ci-ok".
     name: ci-ok
     if: always()
-    needs: [lint, typecheck, test, prisma, build, infra]
+    needs: [lint, typecheck, test, prisma, build, infra, docs-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

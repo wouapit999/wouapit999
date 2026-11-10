@@ -1,0 +1,86 @@
+stage,component,spec,monthly_low_usd,monthly_high_usd,introduced_in_phase
+phase-1,Neon Postgres,Launch plan; project bi-rem aws-eu-central-1 PG 17; branches main + staging + pr-n; 0.25-2 CU autoscale; < 5 GB; PITR 7 days,19,69,1
+phase-1,Redis,Upstash 2 regional databases (staging + production) pay-as-you-go < 256 MB,0,50,1
+phase-1,API compute,Fly.io cdg: bi-rem-api-staging + bi-rem-api; 2 x shared-cpu-2x 1 GB each (4 machines); rolling deploys,60,140,1
+phase-1,Workers,None: notification BullMQ consumers run in the API process,0,0,1
+phase-1,Vercel,Pro; projects bi-rem-web + bi-rem-admin in cdg1; per-PR previews; 1 TB bandwidth included,40,100,1
+phase-1,Object storage,None: no customer documents before Phase 2,0,0,1
+phase-1,Secrets and KMS,Fly secrets + GitHub Environment secrets; no KMS yet,0,0,1
+phase-1,Observability,Grafana Cloud free to Pro (Prometheus + Loki 30 days) + Sentry Team (api/web/admin),26,129,1
+phase-1,CDN WAF DNS,Cloudflare DNS + TLS for app. admin. api.; domain amortised,2,25,1
+phase-1,CI,GitHub Team ~10 seats incl. 3000 Actions minutes + GHCR; light overage,50,160,1
+phase-1,Email,Resend or Postmark starter tier (SPF/DKIM/DMARC),0,20,1
+phase-1,Network egress,Fly Europe egress < 50 GB/month,0,5,1
+pilot,Neon Postgres,Scale plan; primary autoscale 2-8 CU; 60-150 GB; PITR 30 days; pg_trgm/unaccent; monthly partitions,400,1100,5
+pilot,Neon read replica,"1 read-only endpoint 1-4 CU for explorer, recon, AML batch and BI fallback (DATABASE_REPLICA_URL)",120,400,5
+pilot,Neon non-production branches,"staging + sandbox (Phase 9, reset nightly) + perf + ephemeral pr-n branches",60,200,1
+pilot,Redis,Upstash fixed-price plans: production 2-4 GB noeviction + staging + sandbox; ~35 BullMQ queues + throttler + caches,200,600,4
+pilot,API compute,Fly cdg http group: production 3-4 shared-cpu-2x 2 GB + staging 2; partner API headroom,120,320,1
+pilot,Workers,Fly worker groups: worker 3-4 shared-cpu-2x + worker-fx + 2 shared-cpu-4x 4 GB (AML) + worker-reports 2 x 2 GB (Chromium),450,950,2
+pilot,ClamAV sandbox and simulators,"ClamAV clamd 2 GB (P2) + bi-rem-sandbox app 1 http + 1 worker (P9) + bi-rem-simulator, fx-sim, kyb-sim (staging only)",90,240,2
+pilot,Static egress IPs,Fly static egress IPv4 per environment + 2 dedicated webhook egress IPs,8,25,3
+pilot,Vercel,Pro; web + admin + partner portals + developers docs; bandwidth < 1 TB,80,250,1
+pilot,Object storage,"S3-compatible buckets with SSE + versioning + Object Lock: kyc-docs (cold after 90 d), receipts, settlement, statements, compliance, reports; 0.3-1 TB",120,450,2
+pilot,Secrets and KMS,"AWS KMS CMKs (kyc, connectivity, compliance, oauth-signing ES256) + CloudTrail to S3 400 days",35,135,2
+pilot,Observability,"Grafana Cloud Pro: Prometheus + Loki 30 d; ~20 dashboards (KYC, Connectivity, Wallet Engine, Transfers and Ledger, intl, FX, AML)",150,550,1
+pilot,Error tracking,"Sentry Team/Business: api, web, admin, partner, mobile projects with release tagging",80,380,1
+pilot,Paging,"PagerDuty Professional: engineering, treasury and partner-api rotations (~8 users)",100,250,7
+pilot,ClickHouse warehouse,"ClickHouse Cloud production (2 replicas, autoscaling capped) + staging dev tier + ClickPipes Postgres CDC",700,1900,10
+pilot,Mobile build and test,Expo EAS Production + Firebase Test Lab + BrowserStack App Automate (FCM and APNs free),350,1900,11
+pilot,CI,"GitHub Team + Actions overage: conformance matrix, nightly k6, chaos, macOS for iOS fallback builds",100,400,1
+pilot,CDN WAF DNS,Cloudflare Pro + rate-limit rules on /v1/auth/register* and /v1/webhooks/*,25,250,2
+pilot,Email,Resend Pro/Scale 50-150 k e-mails per month,20,90,1
+pilot,Network egress,Fly egress Europe ~0.3-1 TB/month + provider callbacks,10,40,1
+production-launch,Neon Postgres,Scale plan; primary 2-8 CU sustained 3-5 CU; 200-400 GB; PITR 30 days; publication birem_all,700,1800,5
+production-launch,Neon read replica,"1-2 read-only endpoints 2-4 CU (explorer, recon, AML batch, BI fallback)",200,600,5
+production-launch,Neon DR standby,Project bi-rem-standby in aws-eu-west-2; logical subscription birem_sub; compute >= 50 % of primary; lag < 30 s,400,1200,12
+production-launch,Neon non-production branches,staging + sandbox + perf-20271101 (campaign weeks) + pr-n,100,300,1
+production-launch,Redis,Upstash global database with eu-west-1 read replica; fixed plan 4-8 GB noeviction,300,900,12
+production-launch,API compute,"Fly cdg http: min 3 / max 8 shared-cpu-4x 4 GB, concurrency soft 150 / hard 200 + staging",250,700,12
+production-launch,DR region compute,"Fly ams: 1 warm machine, 3 on failover; secrets pre-staged; DR_REGION env",60,250,12
+production-launch,Workers,Fly worker groups as pilot plus autoscaling headroom on queue depth,600,1300,2
+production-launch,ClamAV sandbox and simulators,ClamAV + bi-rem-sandbox + staging simulators,90,240,2
+production-launch,Static egress IPs,cdg and ams static IPs allow-listed with providers and FIUs,15,40,3
+production-launch,Vercel,Pro (Enterprise evaluated); 4 projects; ~1-2 TB bandwidth,150,450,1
+production-launch,Object storage,KYC documents ~1 TB with cold tier + receipts + settlement + reports/board Object Lock 10 y,200,600,2
+production-launch,Backups,Separate AWS account: S3 Object Lock 35 days + KMS + CRR to eu-west-2 + Glacier Deep Archive + CloudTrail,100,400,12
+production-launch,Secrets and KMS,KMS CMKs + AWS Secrets Manager in backup account + key rotation,60,200,2
+production-launch,Observability,"Grafana Cloud plan step: SLO recording rules, Loki 400 days for audit/auth streams, Launch/Capacity/DR dashboards",450,1700,12
+production-launch,Synthetic monitoring,"Grafana Synthetic Monitoring or Checkly: Lagos, Nairobi, Dakar, Paris x 4 checks every 60 s",150,600,12
+production-launch,Error tracking,Sentry Business incl. hypercare quota,100,600,1
+production-launch,Paging,"PagerDuty Business: platform, payments, partner-api, mobile, compliance; 15-25 users",600,1500,12
+production-launch,ClickHouse warehouse,ClickHouse Cloud 2 replicas + ClickPipes; 13+ months of history,800,2200,10
+production-launch,Mobile build and test,EAS Production + Firebase Test Lab + BrowserStack,350,1900,11
+production-launch,CI,"GitHub Team/Enterprise + Actions (load-test, backup-verify, dr-test, go-live-gates workflows)",150,500,1
+production-launch,CDN WAF DNS,Cloudflare zone bi-rem.africa: Load Balancing pools api-cdg/api-ams + WAF managed + OWASP + rate limiting + Logpush,250,1500,12
+production-launch,Email,Resend Scale ~0.3-0.8 M e-mails per month,50,150,1
+production-launch,Network egress,Fly egress + Cloudflare origin pulls + Neon logical replication cross-region,30,120,12
+scale,Neon Postgres,eu1 primary autoscale 4-8 CU sustained; 0.6-1 TB; PITR 30 days,1000,2400,5
+scale,Neon read replica,eu1 2 read-only endpoints 2-4 CU,300,900,5
+scale,Neon DR standby,bi-rem-standby aws-eu-west-2 logical replica for eu1,500,1500,12
+scale,Neon global control plane,"Project bi-rem-global (PII-free directories identity_index, tracking_index) + read replica reachable from af1",70,250,13
+scale,Neon non-production branches,staging + sandbox + perf + pr-n,100,300,1
+scale,Redis,eu1 Upstash global fixed plan 8-16 GB,400,1200,12
+scale,API compute,eu1 Fly cdg http min 3 / max 8 performance-2x 4 GB,400,1200,1
+scale,DR region compute,Fly ams warm standby for eu1,60,250,12
+scale,Workers,"eu1 worker groups incl. AML, FX, reports, rails:* and region:* queues",700,1600,2
+scale,ClamAV sandbox and simulators,ClamAV + sandbox + rail-sim + provider-sim (both cells staging),90,240,2
+scale,Static egress IPs,eu1 static IPs; af1 NAT Elastic IPs counted in the af1 cell,20,50,3
+scale,Vercel,Pro or Enterprise; 4 projects; 2-4 TB bandwidth,300,2500,1
+scale,Object storage,eu1 KYC documents 3-5 TB (cold tier) + receipts ~2 TB/year + reports,300,900,2
+scale,Backups,AWS backup account for eu1 dumps + af1 cross-region snapshot copies,200,700,12
+scale,Secrets and KMS,KMS CMK per cell + per-country key aliases + Secrets Manager,100,300,13
+scale,Observability,"Grafana Cloud both cells (region labels, per-cell SLOs) via Alloy sidecar from CloudWatch",600,2200,12
+scale,Synthetic monitoring,"4 African vantage points + Paris, both cells",200,700,12
+scale,Error tracking,Sentry Business both cells + mobile,150,800,1
+scale,Paging,PagerDuty Business; both cells on one rota,800,1800,12
+scale,ClickHouse warehouse,ClickHouse Cloud eu-central-1 (PII-free marts with region dimension) + ClickPipes from Neon and Aurora,1200,3500,10
+scale,Mobile build and test,EAS Production + Firebase Test Lab + BrowserStack,350,1900,11
+scale,CI,GitHub Enterprise or Team + Actions deploying both cells on every main push,200,700,1
+scale,CDN WAF DNS,Cloudflare for eu1 edge + status page,300,1800,12
+scale,Email,Resend Scale/Enterprise ~1-2 M e-mails per month,90,300,1
+scale,af1 production cell,AWS af-south-1: Aurora PG 16 Multi-AZ 2 x db.r6g.large + RDS Proxy + ECS Fargate api-http 2-8 and api-worker 2-6 tasks + ElastiCache Multi-AZ + NAT x3 + Network Firewall + S3 Object Lock + KMS + CloudFront/ALB/WAF + CloudWatch,2500,4500,13
+scale,af1 staging cell,Aurora Serverless v2 0.5-4 ACU + 2 Fargate tasks + single-AZ cache,500,900,13
+scale,AWS Business Support,"10 % of AWS spend, minimum USD 100",100,1000,13
+scale,DNS failover,"Route 53 latency-based and failover records for api.bi-rem.africa with /health/ready checks, TTL <= 60 s",20,80,13
+scale,Network egress,af1 data transfer out (Africa) + inter-region snapshot copy + control-plane replica traffic + eu1 egress,250,900,13

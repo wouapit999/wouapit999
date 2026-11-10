@@ -159,11 +159,19 @@ GitHub Environments: `staging` (auto), `production` (required reviewers), `previ
 
 ## Documentation
 
+- [Documentation index](docs/README.md) — every deliverable, phase plan, architecture note and
+  roadmap data file, with owners and review cadence
+- [Implementation roadmap](docs/00-implementation-roadmap.md) — executive summary, phase sequence,
+  release waves, staffing and steering-committee decisions (deliverables 01–09 alongside it)
+- [Interactive roadmap](docs/roadmap/index.html) — browser view of the schedule, milestones and
+  dependencies (open locally, or serve `docs/roadmap/` over HTTP to read the live data files)
+- Docs checker: `pnpm docs:check` (Mermaid render, relative links, phase dates, phase sections;
+  also runs in CI as the `docs-check` job)
 - `docs/roadmap/schedule.json` — master schedule (source of truth for dates)
 - `docs/phases/` — one plan per phase
-- `docs/architecture/` — architecture notes: `infrastructure-architecture.md`,
-  `database-schema-v1.md`, `environment-management.md`, `monitoring-framework.md`,
-  `security-baseline.md`, `phase-1-implementation-notes.md`
+- `docs/architecture/` — architecture notes: `target-architecture.md`,
+  `infrastructure-architecture.md`, `database-schema-v1.md`, `environment-management.md`,
+  `monitoring-framework.md`, `security-baseline.md`, `phase-1-implementation-notes.md`
 - `infra/docker/README.md`, `infra/fly/README.md`, `infra/vercel/README.md`, `infra/aws/README.md`
 - `apps/api/README.md`, `packages/db/README.md`, `packages/shared/README.md`
 
