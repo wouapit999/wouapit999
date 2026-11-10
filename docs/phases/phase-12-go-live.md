@@ -1291,3 +1291,341 @@ Shared components (`packages/ui`): `StageBadge`, `CriteriaChip`, `SloBudgetBar`,
 - §12 evidence artefacts filed under `go_live_gates`.
 
 ---
+
+## 10. CI/CD Pipeline
+
+### 10.1 Pipeline
+
+Phase 12 does not add a new delivery path; it **hardens the Phase 1 path** (`ci.yml` → `deploy-api.yml` → `fly-deploy.yml` with the `production` GitHub Environment) with release candidates, a staging soak, evidence-backed gates and a per-market canary that is pure configuration. Every production promotion deploys **the exact GHCR digest that soaked on staging** (the existing `workflow_dispatch` `image` input), never a rebuild.
+
+```mermaid
+flowchart TB
+  subgraph freeze["Change freeze W1 to W6 - launch-freeze ruleset on main"]
+    PR["PR to main<br/>fix perf ops docs commits only"] --> CI["ci.yml<br/>lint typecheck test prisma build infra"]
+    CI --> K6S["k6-smoke 5 min at 20 rps<br/>on perf label or apps/api changes"]
+    CI --> PAN["pci-pan-scan<br/>artefacts fixtures log samples"]
+    CI --> SEC["security.yml<br/>CodeQL Trivy gitleaks pnpm audit"]
+    K6S --> MERGE["Merge - two reviewers"]
+    PAN --> MERGE
+    SEC --> MERGE
+  end
+  MERGE --> STG["deploy-api.yml on main<br/>GHCR digest to Fly staging"]
+  STG --> SMOKE["smoke-test.sh and Playwright e2e<br/>against staging"]
+  SMOKE --> RC["release-please prerelease tag vX.Y.Z-rc.N<br/>release candidate"]
+  RC --> SOAK["Staging soak 24 h<br/>steady-300rps 1 h plus synthetic probes"]
+  SOAK --> GATES{"go-live-gates job<br/>pentest-closed load-test-passed<br/>dr-drill-passed change-freeze window"}
+  GATES -- any gate FAILED --> BLOCK["Run refused<br/>Slack launch channel names the failing gate key"]
+  GATES -- all PASSED or WAIVED --> APPR["GitHub Environment production<br/>2 reviewers and 10 min wait timer"]
+  APPR --> MIG["release_command prisma migrate deploy<br/>expand only during freeze"]
+  MIG --> PROD["fly deploy same digest<br/>cdg rolling then ams warm machine"]
+  PROD --> VERIFY["Post-deploy smoke<br/>health ready region replication lag"]
+  VERIFY -- fail --> RB["Automatic rollback<br/>fly deploy previous digest from pre-deploy release step"]
+  VERIFY -- pass --> DARK["Code live but dark<br/>no flag changes in the deploy"]
+  DARK --> CANARY["Canary per market via flags<br/>rules countryCode and rolloutPercentage"]
+  CANARY --> LADDER["LaunchService advance<br/>INTERNAL PILOT SOFT_LAUNCH GA"]
+  LADDER --> WATCH["Hypercare watch<br/>SLO burn incidents recon CSAT"]
+  WATCH -- regression --> RBF["Flag or stage rollback<br/>seconds no deployment"]
+  WATCH -- healthy --> NEXT["Next cohort or market<br/>board decision recorded"]
+```
+
+How the stages map onto the phase:
+
+| Stage | Mechanism | Phase 12 rule |
+| --- | --- | --- |
+| **Release candidate** | `release.yml` (release-please) configured with `prerelease: true` and `prerelease-type: rc` for the duration of the freeze; every `main` merge during W1–W6 lands in `vX.Y.Z-rc.N`; the final `vX.Y.Z` is cut only after board #3 (M12.6) | At most one RC per day; RC notes list the `fix:`/`perf:`/`ops:` commits and the `change_requests` reference each one belongs to |
+| **Staging soak** | `deploy-api.yml` on `main` deploys automatically to Fly staging (unchanged); `load-test.yml` runs `steady-300rps` for 1 h against the RC; synthetic probes (staging stack) run for 24 h; Playwright e2e and `smoke-test.sh` run after deploy | A production promotion is refused unless the RC digest has ≥ 24 h on staging **and** a `load_test_runs` row for that `git_sha` with `thresholds_met=true` (waivable by the DevOps lead for `fix:` commits with an incident reference) |
+| **Production promotion** | `deploy-api.yml` `workflow_dispatch` with `environment=production` and `image=<digest>`; new `go-live-gates` job runs before `fly-deploy.yml`; GitHub Environment `production` keeps **required reviewers** (DevOps lead + one of solution architect / backend lead; the proposer cannot approve) and gains a **10-minute wait timer** and a **custom deployment protection rule** that calls `GET /v1/ops/changes?window=now` to confirm an `APPROVED`/`SCHEDULED` change request covers the run | Portals: `deploy-web.yml` / `deploy-admin.yml` / `vercel-deploy.yml` unchanged, but production promotion requires the same `go-live-gates` reusable workflow and the Vercel "promote" step is recorded as a `change_requests` row |
+| **Canary per market** | None of the Phase 12 code paths are user-visible without flags; new behaviour reaching customers is turned on **per market** through `FeatureFlag.rules` (`countryCode in [...]`) and `rolloutPercentage`, and money paths through the launch ladder (`LaunchService.advance()`), which writes the Phase 5/6/9/11 flags atomically | A deploy never changes flag state; a flag never requires a deploy. Canary order is always `CM` (anchor) → other domestic markets → wave A → wave B; the Kill Switch Panel is open on the command centre during every canary step |
+| **Rollback** | `fly-deploy.yml` already records the pre-deploy release; Phase 12 makes the post-deploy smoke **fail the job and redeploy the previous digest automatically** when `/health/ready` is not green on all machines within 5 minutes or `smoke-test.sh` fails; flag and stage rollbacks never involve the pipeline | §10.4 |
+
+### 10.2 Workflow changes (`.github/workflows`)
+
+| Workflow | Change |
+| --- | --- |
+| `ci.yml` | New jobs: `k6-smoke` (5 min, 20 rps `tests/load/k6/smoke.js` against an ephemeral API started in the job with Testcontainers Postgres/Redis and `provider-sim`; runs when a PR carries the `perf` label or touches `apps/api/src/modules/{transfers,intl,wallets,ops}`; thresholds `http_req_failed < 0.1 %`, p95 per route from `tests/load/budgets.json`); `pci-pan-scan` (greps built artefacts, `packages/db/prisma/seed-data`, test fixtures and a 24 h Loki sample pulled with a read-only token for Luhn-valid 13–19 digit sequences; allow-list `tests/fixtures/pan-allowlist.txt` for simulator test PANs; fails on any hit); `ops-unit` is folded into the existing `test` job (`modules/ops` coverage ≥ 85 % enforced by the Jest threshold). `prisma` job additionally asserts that the only new migration in W1–W6 is `20271101090000_phase12_expand` (freeze guard on `packages/db/prisma/migrations`). |
+| `deploy-api.yml` | New job `go-live-gates` (needs `build`, runs before the `deploy-production` call of `fly-deploy.yml`, skipped for staging): calls `GET /v1/launch/gates?keys=security.pentest.signoff,reliability.loadtest.campaign2,reliability.dr.drill1,operations.change-freeze` with a `GO_LIVE_GATES_API_KEY` (`ApiKey` scoped `launch:read`), verifies each is `PASSED` or `WAIVED` (waiver not expired), checks the soak rule (`load_test_runs` for the digest's `git_sha`, ≥ 24 h on staging via the GitHub Deployments API), and verifies the current time is **outside** a freeze window **or** the run is linked to an approved `change_requests` reference passed as the new `change_ref` input. Any failure posts the failing gate key to Slack `#launch` and ends the run. Post-deploy step extended: `/health/ready` must report `region`, `activeRegion` and `maintenanceMode=false` on every machine in `cdg` and `ams`; on failure, `flyctl deploy --image <previous>` runs automatically and the run is marked failed. |
+| `fly-deploy.yml` | Pre-deploy release step also writes the previous and new digests into `change_requests.references` via `PATCH /v1/ops/changes/:id` so the rollback digest is visible in the admin portal; `fly deploy` runs with `--strategy rolling` in `cdg` and then restarts the `ams` warm machine so both regions run the same image. |
+| `release.yml` | `release-please-config.json` gains `prerelease: true`, `prerelease-type: "rc"` behind a repository variable `LAUNCH_FREEZE=true` (set W1, cleared at M12.6); PR title linter rejects `feat:` while the variable is set (belt and braces with the ruleset). |
+| `security.yml` | Weekly ZAP baseline against staging (`zaproxy/action-baseline`, fails on High); `trivy-image` also scans the `worker` image; findings auto-imported into `security_findings` (`source=codeql`/`trivy`) by a small script calling `POST /v1/ops/findings/import`. |
+| `db-migrate.yml` | Unchanged mechanics; `action=deploy` on production refused while `LAUNCH_FREEZE=true` unless the migration name matches `20271101090000_phase12_expand` or the run carries an approved `change_ref`. |
+| `backup.yml` (new) | Nightly 02:30 UTC: `infra/scripts/db-backup.sh --upload s3://bi-rem-backups/production` via GitHub OIDC role (`PutObject` only), KMS encryption, Object Lock 35 days; month-end dumps tagged `retention=7y`; alert if the run is missing (backup age > 26 h alert is on the Grafana side). |
+| `backup-verify.yml` (new) | Weekly Sunday 04:00 UTC: restores the newest dump into Neon branch `verify-<date>` with `db-restore.sh --neon-branch`, runs `prisma migrate status`, schema checksum, row-count tie-outs (12 tables, ± 0.5 %), ledger invariants, decrypt sample; `POST /v1/ops/backups/verifications` with an `ApiKey` scoped `drills:write`; deletes the branch; `FAIL` → PagerDuty P2 via the event. |
+| `dr-test.yml` (new) | Monthly (first Tuesday 03:00 UTC) non-disruptive DR test: clones the standby project, promotes the clone, runs `smoke-test.sh` and the ledger invariant job against it, records a `dr_drills` row (`type=DR_FAILOVER`, `announced=true`, `scenario=automated-clone`), destroys the clone. Manual dispatch with `mode=real` is **not** offered — real drills are run by people with `dr-failover.sh`. |
+| `load-test.yml` (new) | Manual and on RC tags: `scenario` input (`steady-300rps`, `peak-900rps`, `soak-8h`, `stress-to-failure`, `spike`, `provider-degradation`, `month-end`, `mobile-storm`), `environment` (`staging` default; `production` requires the `production-loadtest` Environment with the COO as required reviewer and a `change_ref`), `k6 cloud run` with results streamed to Grafana; `POST /v1/ops/load-tests` with the summary; schedules `loadtest-cleanup` on production runs. |
+| `synthetics-config.yml` (new) | Applies `infra/grafana/synthetics/*.json` (checks for login, quote, tracking, portal pages from Lagos, Nairobi, Dakar, Paris at 60 s) and `infra/grafana/alerts/*.json` through the Grafana Terraform provider on merge to `main`; `terraform plan` on PRs with the diff as a comment. |
+| `runbooks-sync.yml` (new) | On merge to `main` touching `docs/runbooks/**`: validates the runbook template (required headings, `owner`, `last_tested_at`), renders Markdown and calls `POST /v1/ops/runbooks/sync` with an `ApiKey` scoped `runbooks:write`; fails if an alert rule in `infra/grafana/alerts` references a `runbook_url` that does not resolve to a runbook key. |
+| `go-live-gates.yml` (new, reusable) | `workflow_call` used by `deploy-api.yml`, `deploy-web.yml`, `deploy-admin.yml` and `db-migrate.yml` so the gate logic lives in one place; inputs `gates` (comma-separated keys), `change_ref`, `require_soak`. |
+
+Repository rulesets and environments: ruleset `launch-freeze` on `main` (active W1–W6, `2027-11-01` → `2027-12-10`): required status checks `ci / lint`, `ci / typecheck`, `ci / test`, `ci / prisma`, `ci / build`, `ci / pci-pan-scan`, `security / gitleaks`; commit-message pattern `^(fix|perf|ops|docs|chore\(deps\))(\(.+\))?:`; two reviewers including one code owner; no force pushes; bypass list = release manager role only, every bypass is a `change_requests` row of category `freeze`. GitHub Environments: `staging` (no reviewers), `production` (2 reviewers, 10-minute wait, custom protection rule → change calendar), `production-loadtest` (COO), `dr-operations` (DevOps lead + CTO; holds the standby `DATABASE_URL` and Cloudflare LB token used by `dr-test.yml`), `backups` (OIDC role, no human secrets).
+
+### 10.3 Rollout strategy per market
+
+The rollout is the **launch ladder** (§3.11), executed by board decisions, not by deployments. Dates below are the board sessions in §2; a market that misses its exit criteria stays where it is and is reviewed at the next session.
+
+| Step | When | Who is in | Caps and flags | Entry gate (hard) | Exit criteria (evaluated hourly) | Rollback |
+| --- | --- | --- | --- | --- | --- | --- |
+| **0 — Dark** | W1–W2 (2027-11-01 → 2027-11-12) | Nobody; Phase 12 code deployed with `admin.ops.console` for `OPS_ADMIN` only | All launch flags unchanged from the end of Phase 11 | `20271101090000_phase12_expand` applied; `go_live_gates` backfilled | Ops module smoke on production; DR built dark (M12.2) | n/a |
+| **1 — `INTERNAL`** | From 2027-11-15 (W3) for all markets | Staff (`rules: emailDomain in [bi-rem.africa]`), own wallets, real money | Per-transfer cap 25 % of Phase 5 limit; daily market cap set by treasury (XAF/XOF/NGN/KES/GHS); `transfers.domestic.<cc>.live` rules staff; `intl.corridor.<k>.enabled` staff; `mobile.transfers.*` staff | Gate group `reliability` (load campaign 1, backups) and `operations` (runbooks v1, on-call live) `PASSED` | ≥ 200 staff transfers across ≥ 6 markets, recon green, zero P1 | Flags back to pre-Phase 12 rules (`LaunchService.rollback()`), seconds |
+| **2 — `PILOT`** | Board #1 2027-11-26 (M12.4): `CM`, `SN`, `CI`, `KE`, `GH`, `NG` domestic; `CM→GA`, `GA→CM` | ≤ 500 invited customers per market from the Phase 2 waiting list with LEVEL_2 KYC (`cohort pilot-<cc>`), invitation via `launch.pilot.invite` (e-mail/SMS/push, en/fr/pt) | Per-transfer cap 50 % of Phase 5 limit; daily user cap; daily market cap from nostro coverage; `rolloutPercentage=100` for the cohort rule; partner portal on for pilot partners only | `regulatory.<cc>.*` all `PASSED`; `security.pentest.signoff` `PASSED`; `compliance.pci.saq-a` `PASSED`; BCP tabletop held | ≥ 300 transfers, success ≥ 98.5 %, recon zero unexplained breaks 5 consecutive days, ≤ 1 P2, CSAT ≥ 4.2/5 — per market | Stage rollback to `INTERNAL`, cohort users receive `FEATURE_DISABLED` on new transfers, in-flight complete; < 5 s |
+| **3 — `SOFT_LAUNCH`** | Board #2 2027-12-03 (M12.5) for markets with pilot exit green; wave A `CM→TD`, `CM→CG` ride `CM`; wave B (`CM→AO`, `CM→MZ`, `CM→GW`) enters `PILOT` | 25 % → 50 % → 100 % of eligible customers by stable user-id hash (`rolloutPercentage` steps at ≥ 48 h intervals, each step a `change_requests` row), marketing silent, store listings unpromoted | Full Phase 5/6 limits; daily market cap raised by treasury per step; `partner.portal.enabled` per market; status page public; partner SLA active | DR drill #2 and restore drill #2 `PASSED`; availability since first pilot ≥ 99.9 %; hypercare roster for the window signed | 7 consecutive days with zero P1/P2, ≤ 2 P3/day, SLO budgets > 50 % remaining, support backlog < 24 h, recon green | `rolloutPercentage` back one step (seconds) or stage rollback to `PILOT` |
+| **4 — `GENERAL_AVAILABILITY`** | Board #3 2027-12-10 (M12.6) for ≥ 3 markets; others remain `SOFT_LAUNCH` with dated review | Everyone eligible in the market; marketing live once ≥ 3 markets are GA (`launch.ga.announce`) | 100 %, caps = Phase 5/6 limits; hypercare continues 14 days from the GA date, then BAU on-call | Soft-launch exit criteria; hypercare exit plan; board quorum | n/a (BAU SLOs) | Stage rollback to `SOFT_LAUNCH` at 50 %; corridor `PAUSED` for a single corridor; `platform.maintenance-mode` as last resort |
+
+Wave C (`CM→CV`, `CM→ST`) stays `SANDBOX` unless Q12.7 is answered positively before board #2; it would then enter `INTERNAL` only, never `PILOT`, inside this phase. Watch metrics during every step (halt recommendation posted to Slack `#launch` when breached for 15 minutes): transfer success < 98.5 % per market, API availability burn rate > 2 %/h, recon unexplained breaks > 0, provider failure rate > 5 %/5 min, `outbox_pending_total` > 1,000, support contacts per 100 transfers > 3, CSAT < 4.0 rolling 24 h, app crash-free sessions < 99.3 % (Phase 11).
+
+### 10.4 Rollback procedure
+
+Every board decision references the plan that applies to it (`go_live_decisions.rollback_plan_url`); all of these were rehearsed in staging during W2–W3 with the timings below recorded in `dr_drills` (`type=GAME_DAY`).
+
+| Scenario | Action | Who | Time to effect |
+| --- | --- | --- | --- |
+| Feature or flag misbehaving in one market | Flag off or `rolloutPercentage` down via the Kill Switch Panel / `PATCH /v1/admin/feature-flags/:key`; money-affecting flags need the second operator | `OPS_ADMIN` + confirmer | ≤ 30 s (flag cache) |
+| Launch step wrong for a market (pilot problems, regulator request) | `POST /v1/launch/markets/:marketKey/rollback` with reason → previous `applied_flags` restored atomically, hypercare window kept open, Slack `#launch` notified | `INCIDENT_COMMANDER` or `OPS_ADMIN` with `killswitch:execute` | < 5 s to apply, ≤ 30 s to propagate |
+| One corridor unsafe (provider, FX, sanctions) | Corridor → `PAUSED` (Phase 6); in-flight transfers park `HELD`; status component → `DEGRADED` with a published update | Payments on-call | Seconds |
+| Bad API release (errors, latency, saga failures) | `flyctl deploy --image <previous digest> --app bi-rem-api` (digest from the pre-deploy release step / `change_requests.references`); automatic when post-deploy smoke fails; manual via `deploy-api.yml` dispatch with the previous digest | DevOps on-call | 2–4 min rolling in `cdg`; `ams` restarted after |
+| Bad portal release | Vercel "promote previous deployment" for `apps/web` / `apps/admin`; Cloudflare cache purge for `status.bi-rem.africa` | Frontend on-call | ≤ 2 min |
+| Bad migration | Forward-fix only. Under freeze: `platform.maintenance-mode=true`, Neon PITR branch taken first, `down.sql` applied with `db-migrate.yml` and an approved `change_ref`, then redeploy previous digest | DevOps + backend lead, CTO informed | 15–30 min; PITR restore up to 60 min |
+| Edge rule blocks legitimate traffic | Cloudflare ruleset version rollback (versioned rulesets, Terraform state), WAF rule to log mode | DevOps on-call | ≤ 1 min |
+| Primary region or Neon primary lost | `dr-failover.sh --confirm` (§4.3); later `dr-failback.sh` in a maintenance window | Incident commander + DevOps | RTO ≤ 60 min (target ≤ 35), RPO ≤ 15 min (target ≤ 1) |
+| Redis loss or poisoned cache | `FLUSHDB` on the relevant prefix or Upstash failover to replica; API degrades per Phase 1; BullMQ queues rebuilt from `outbox` | DevOps on-call | ≤ 5 min |
+| Mobile build or OTA regression during hypercare | Phase 11 procedures: Play staged rollout halt, iOS phased release pause, `eas update:republish`, `mobile.hard-min-version.*` only for security | Mobile on-call | Minutes (OTA) to hours (store) |
+| Whole platform must stop accepting money | `platform.maintenance-mode=true` (two-person) → all mutations 503 `MAINTENANCE`, workers drain, portals and app show the maintenance screen, status page updated from template | Incident commander + confirmer | ≤ 30 s |
+
+---
+
+## 11. Production Readiness Checklist
+
+**Observability**
+- [ ] Seven SLOs from `docs/handbooks/slo.md` exported as `slo_*` recording rules; Grafana folders `SLO`, `Launch`, `Capacity`, `DR` provisioned from `infra/grafana/*.json`; error-budget policy (freeze non-emergency rollouts below 25 % remaining) signed by the COO.
+- [ ] Burn-rate alert pairs (2 %/1 h page, 5 %/6 h ticket) for every SLO wired to the right PagerDuty service; business anomaly alerts (transfers/min < 40 % of weekday-hour median for 10 min, provider failures > 5 %/5 min, `outbox_pending_total` > 1,000, replication lag 5 min warning / 10 min P2, certificate expiry < 14 days, backup age > 26 h).
+- [ ] Every alert rule carries `runbook_url` resolving to a `runbooks` row (`runbooks-sync.yml` check green); alert review W3–W6 shows < 5 % false positives; no alert without an owner.
+- [ ] Synthetic probes from Lagos, Nairobi, Dakar and Paris every 60 s on login, quote, tracking and portal pages; probe p95 from African vantage points < 1.5 s; probe results excluded from business SLIs via the synthetic tenant tag.
+- [ ] Sentry projects for API, web, admin and mobile at production quota; releases tagged with the deployed digest; alert on new issue type > 50 events/h during hypercare.
+- [ ] Cloudflare analytics and logs (Logpush to Loki) joined with API metrics so availability is measured at the edge **and** at the origin; Loki retention 400 days for `audit`/`auth` streams.
+- [ ] Command centre (Phase 10 Operational Dashboard + Phase 12 panels) shows live SLO burn, active incidents, launch stage per market, DR state (active region, replication lag, last drill) and the Kill Switch Panel; accepted by the COO.
+
+**Reliability**
+- [ ] Load campaign 1 (staging, M12.2) and campaign 2 (production off-peak, M12.3) recorded in `load_test_runs` with `thresholds_met=true`; stress breakpoint ≥ 1,200 rps with graceful 429/503 and `Retry-After`; soak 8 h with memory growth < 10 %.
+- [ ] Capacity model published (`docs/handbooks/capacity-model.md`); Fly `cdg` `min_machines_running=3`, max 8, concurrency soft/hard 150/200; `ams` min 1; Neon autoscaling 2–8 CU; headroom alerts at 60 % and scale review at 70 % of the breakpoint.
+- [ ] PgBouncer transaction pooling at 200 server connections; Prisma pool 10 per instance; BullMQ concurrency per queue (`notifications` 20, `transfers-saga` 8, `outbox-relay` 4, `webhooks` 16) documented.
+- [ ] DR topology live and dark: Fly `ams` warm machine, Neon `bi-rem-standby` (`aws-eu-west-2`) replicating with lag < 30 s over 24 h, Upstash global replica, Cloudflare LB pools `api-cdg` 100 / `api-ams` 0 with health monitor on `/health/ready`, S3 CRR to `eu-west-2`.
+- [ ] DR drill #1 (announced, M12.3) and #2 (unannounced, M12.5) recorded in `dr_drills` with RPO ≤ 15 min and RTO ≤ 60 min; failback rehearsed; `dr-test.yml` monthly clone test green at least once; `dr-sync-sequences.sh` running every 5 min.
+- [ ] `backup.yml` nightly with Object Lock compliance mode 35 days + KMS + CRR; `backup-verify.yml` ≥ 4 consecutive `PASS`; restore drills #1 (W2) and #2 (W5) recovered database, a KYC document and a receipt PDF with SHA-256 match; Neon PITR 30 days on production.
+- [ ] Every rollback in §10.4 rehearsed in staging with timing recorded; automatic image rollback on failed post-deploy smoke tested.
+- [ ] Six game days executed (Redis loss, worker kill mid-saga, provider-sim outage, Neon compute restart, certificate expiry simulation, queue backlog) with runbook `last_tested_at` updated.
+- [ ] Cloudflare WAF managed rules, OWASP core, rate limits (login 10/min/IP, OTP 5/min/IP, public tracking 60/min/IP) in **block** mode after 48 h in log mode with zero legitimate-traffic blocks from the pilot markets' mobile ASNs.
+
+**Security**
+- [ ] Pentest (ASVS L2, MASVS L2 + R, PTES, cloud review, phishing of 40 admins) complete; retest letter shows 0 Critical / 0 High open; Medium findings have owner and due date in `security_findings`; sign-off letter filed under gate `security.pentest.signoff`.
+- [ ] Phishing click rate < 10 % and zero credential submissions, or mandatory training completed before `PILOT`.
+- [ ] Pentest and load-test credentials expired/disabled; vendor report stored in the Object-Locked compliance bucket with named access.
+- [ ] Two-person rule and step-up MFA verified for money-affecting kill switches and stage advances (T12.14, T12.15); `GO_LIVE_BOARD`, `OPS_ADMIN`, `INCIDENT_COMMANDER` roles seeded and assigned to named people.
+- [ ] Standby database accepts connections only from Fly `ams` egress IPs and the replication source; replication role has `REPLICATION` + `SELECT` only; secrets duplicated per `rotate-secrets.md` with rotation evidence; Cloudflare Authenticated Origin Pulls on Fly and Vercel.
+- [ ] Backup AWS account: Object Lock compliance mode, KMS CMK key policy limited to the backup role, OIDC role `PutObject`-only, break-glass users with hardware MFA and two approvers, CloudTrail → Loki.
+- [ ] `security.yml` green (CodeQL, Trivy on api and worker images, gitleaks, `pnpm audit` high and above, weekly ZAP baseline); `pci-pan-scan` green on `main`.
+- [ ] Access reviews completed for GitHub, Fly, Neon, AWS, Vercel, Cloudflare, Upstash, PagerDuty, Grafana and admin portal roles with evidence in the compliance platform; leavers from Phases 1–11 removed.
+- [ ] Threat model §8.1 reviewed; residual risks accepted in writing by the CTO.
+
+**Data**
+- [ ] `20271101090000_phase12_expand` applied in production with zero errors; `prisma migrate diff` empty; standby created from the post-migration snapshot so publisher and subscriber schemas match.
+- [ ] `ops:backfill:gates` executed: ≈ 180 `go_live_gates`, `status_page_components`, `runbooks`, ≈ 70 `compliance_controls` present and idempotent on re-run.
+- [ ] Synthetic tenants (`@loadtest.bi-rem.app`) excluded from analytics and regulatory marts (`is_synthetic`), routed to `provider-sim`, purged by `loadtest-cleanup` within 24 h after campaign 2; ledger invariant job zero imbalance after each campaign.
+- [ ] Retention jobs for `load_test_runs` (2 years), `security_findings` (`CLOSED` + 5 years), `status_page_updates` (3 years) scheduled; 10-year retention for incident and decision records confirmed with the Phase 10 cold-export job.
+- [ ] Perf branch `perf-20271101` pseudonymised, used only in staging, deleted at M12.4; Neon `verify-*` branches deleted after each verification.
+- [ ] Data residency for the London standby confirmed by counsel per market (Q12.5) and reflected in records of processing.
+
+**Compliance**
+- [ ] SOC 2 scope statement (Security, Availability, Confidentiality) and system description approved; ≈ 70 controls in `compliance_controls` with owners and evidence sources; 14 policies approved by executives; compliance automation platform (Q12.3) connected to GitHub, Fly, Neon, AWS, Vercel, Google Workspace, PagerDuty, Sentry with ≥ 95 % automated tests passing.
+- [ ] Readiness assessment by the audit firm with no critical gap; Type I observation date contracted (2028-01-15) and evidence freeze plan agreed.
+- [ ] Vendor risk assessments for the 12 critical vendors; risk register (≥ 25 risks) reviewed by management; Paystack and Flutterwave PCI AoCs on file with expiry tracking in `control_evidence`.
+- [ ] PCI: `docs/compliance/pci/scope.md` approved; SAQ A (v4.0.1) signed with AoC by the CFO; requirements 6.4.3 and 11.6.1 evidenced (CSP nonces, SRI, 6-hourly script-inventory hash check on the funding page); first ASV scan "Pass" on all 5 public hostnames.
+- [ ] Regulatory gate group `regulatory.<cc>` `PASSED` for every market entering `PILOT`: licence/partner-model confirmation, data-protection registration or counsel memo, consumer-protection disclosures, MLRO attestation (Phase 8), external counsel opinion, courtesy notification sent where customary.
+- [ ] Breach-notification clocks encoded in `ops.regulator-notify-hours.<cc>` (NDPA 72 h, ODPC 72 h, CBK 24 h for material cyber incidents, others per counsel); incident form proposes the strictest clock from `affectedMarkets` (T12.16).
+- [ ] Launch comms templates (`launch.pilot.invite`, `launch.soft.welcome`, `launch.ga.announce`) and crisis templates in `incident_comms_templates` approved by counsel and MLRO (tipping-off review) in en/fr/pt.
+- [ ] Insurance (cyber liability, technology E&O, crime/fidelity) bound before the first `PILOT`; certificates filed under gate `signoff.insurance`.
+
+**Operations**
+- [ ] ≥ 30 runbooks in `docs/runbooks/` following the template, each exercised once in W2–W5 (`last_tested_at` set): `dr-failover`, `dr-failback`, `backup-restore`, `api-down`, `database-failover`, `redis-loss`, `queue-backlog`, `certificate-expiry`, `vercel-outage`, `provider-outage`, `stuck-transfers`, `duplicate-payouts`, `ledger-imbalance`, `fx-stale-rate`, `nostro-liquidity-low`, `settlement-file-rejected`, `credential-leak`, `account-takeover-wave`, `data-breach`, `sanctions-hit-freeze`, `str-deadline`, `regulator-request`, `corridor-rollback`, `flag-rollback`, `store-rollout-halt`, `maintenance-mode`, `cloudflare-rule-rollback`, `kill-switch-panel`, `hypercare-shift-handover`, `loss-of-fly`, `loss-of-github`.
+- [ ] PagerDuty services `platform`, `payments`, `partner-api`, `mobile`, `compliance` with 3-deep rotations, escalation to the DevOps lead then CTO, Slack integration; on-call ack ≤ 15 min measured for 7 consecutive days before board #3.
+- [ ] Incident-management handbook (severity matrix P1–P4, roles, 15/30/60-minute update cadence, status page policy, regulator clock, blameless post-mortem within 5 business days) adopted; three tabletop incidents and the hypercare dry run (T12.20) completed with actions closed.
+- [ ] Hypercare roster covering 06:00–24:00 WAT in three shifts with PagerDuty overnight; command-centre lead, payments, compliance, support, partner liaison named per shift; daily 08:00 WAT launch stand-up and auto-generated launch report (Phase 10 scheduler) verified.
+- [ ] Change calendar live (`/ops/changes`), freeze windows shaded, iCal feed subscribed by every squad lead; every production change in W1–W6 has a `change_requests` row.
+- [ ] Kill Switch Panel lists every switch in §1.4 with owner, state and two-person requirement; every switch tested in staging; `platform.maintenance-mode` tested in production during the campaign 2 window.
+- [ ] BCP appendices approved (payments ops, treasury, compliance, customer support, engineering/cloud, people, connectivity); executive tabletop held; manual payout procedure and partner hotline matrix printed and in the command centre; key-person matrix with deputies; on-call depth ≥ 3 per rotation.
+- [ ] Support readiness: help-centre launch articles live in en/fr/pt; support scripts for pilot caps, "am I in the pilot", maintenance mode, status page; WhatsApp and SMS broadcast degradation ladder tested.
+- [ ] Partner readiness: status page URL, SLA activation notice, settlement calendar and escalation matrix sent via the Phase 9 developer portal; `partner.platform.status` webhook verified with two partners.
+
+**Documentation**
+- [ ] `docs/handbooks/{slo,incident-management,hypercare,bcp,capacity-model,performance-budgets,launch-comms,go-live-command-centre}.md` current; `docs/compliance/{soc2,pci}/*` complete; `docs/runbooks/*` synced; `tests/load/model.md` and `tests/load/k6/README.md` describe how to rerun campaigns.
+- [ ] ADRs for D1–D7 accepted; `infra/terraform/modules/{cloudflare,dr-standby,backup-bucket,pagerduty}` documented with `README.md`; `api.fly.toml` documents both regions; `.env.example` files list `DR_REGION`, `GO_LIVE_GATES_API_KEY`, `PAGERDUTY_*`, `CLOUDFLARE_*`, `GRAFANA_*`.
+- [ ] OpenAPI `/docs` includes every §6.1 endpoint with examples; `GET /health/ready` extension documented for Cloudflare monitor configuration.
+- [ ] Board charter, decision template, readiness-pack template and minutes archive in the compliance bucket; `docs/handbooks/corridor-launch-playbook.md` written for Phase 13 (ladder as data, gates per market, evidence standard).
+- [ ] Post-mortems from W1–W6 incidents published; phase retrospective and handover document accepted by the Phase 13 lead.
+
+**Sign-offs**
+- [ ] DevOps/SRE Lead — DR, backups, capacity, pipelines, monitoring, runbooks (launch lead for reliability).
+- [ ] Security Engineer — pentest closure, retest letter, edge and backup security controls, two-person rule verification.
+- [ ] Solution Architect — architecture, data model, D1–D7, load-test results and capacity model.
+- [ ] QA Lead — exit criteria (§9.5), drills executed, alert hygiene audit.
+- [ ] Compliance Analyst — SOC 2 readiness, PCI SAQ A, regulatory gate groups, data residency.
+- [ ] MLRO — AML readiness carried from Phase 8, tipping-off review of templates, regulator notification process.
+- [ ] CFO — SAQ A attestation, insurance, treasury BCP and market caps.
+- [ ] General Counsel — counsel opinions per market, data-protection registrations, crisis comms templates.
+- [ ] Head of Customer Operations — support readiness, hypercare roster, help centre.
+- [ ] Head of Partnerships — partner SLA activation and comms.
+- [ ] COO — command centre, SLO document, hypercare exit criteria, go/no-go board chair.
+- [ ] Program Manager — board decisions recorded, launch comms executed, handover to Phase 13.
+
+---
+
+## 12. Success Criteria Verification
+
+| Criterion | How demonstrated | Evidence artifact |
+| --- | --- | --- |
+| **99.9 % uptime target** | SLO 1 (API availability, non-5xx on `/v1/*` excluding synthetic tenants, measured at Cloudflare and at the API) ≥ 99.9 % over the trailing 30 days at M12.6 (T12.1); synthetic probes from Lagos, Nairobi, Dakar and Paris corroborate (T12.19); the topology that protects the target is proven by DR drill #1 and #2 with RPO ≤ 15 min and RTO ≤ 60 min (T12.2), monthly `dr-test.yml` (T12.3), weekly backup verification (T12.4) and the restore drills (T12.5); load campaigns show the platform holds the 100k tx/day peak model with headroom (T12.6–T12.8) | `GET /v1/ops/slo` export and Grafana `SLO` dashboard snapshot for 2027-11-10 → 2027-12-10; Cloudflare analytics export; `dr_drills` rows for both drills with signed reports; `backup_verifications` history; `load_test_runs` rows for campaigns 1 and 2 with `thresholds_met=true`; `docs/handbooks/capacity-model.md`; gate group `reliability` all `PASSED` |
+| **Security audit passed** | External pentest (ASVS L2, MASVS L2 + R, PTES, cloud review, phishing) delivered by M12.4; every Critical and High remediated with a linked PR and retested clean (T12.10); Medium findings scheduled with owners; first ASV scan "Pass" (T12.11); `pci-pan-scan` clean (T12.12); SAQ A signed; SOC 2 readiness assessment with no critical gap (T12.24) | Vendor report and **retest / sign-off letter** filed under gate `security.pentest.signoff`; `security_findings` export showing 0 Critical / 0 High open; ASV scan certificate; SAQ A + AoC PDF; readiness assessment report; compliance platform test summary ≥ 95 % passing |
+| **Production rollout approved** | Go/no-go board #1 (`PILOT`, M12.4), #2 (`SOFT_LAUNCH`, M12.5) and #3 (`GENERAL_AVAILABILITY` in ≥ 3 markets, M12.6) record `GO` decisions with quorum, two approvers and readiness snapshots; hard gates enforced server-side (T12.13, T12.14); stage advances applied through `LaunchService.advance()` with audit rows (T12.21); hypercare exit criteria met before BAU | `go_live_decisions` rows with votes, conditions and `readiness_snapshot`; signed board minutes (`minutes_url`); `corridor_rollout_stages` rows showing `GENERAL_AVAILABILITY` for ≥ 3 markets with `rollout_percentage=100`; `AuditLog` entries for each advance; `launch.stage.changed` events in Slack `#launch`; hypercare exit gate `operations.hypercare-exit.<cc>` `PASSED` |
+| Pilot and soft-launch strategy executed | Every market passed through `INTERNAL` → `PILOT` → `SOFT_LAUNCH` with exit criteria evaluated hourly (T12.22); ≥ 200 staff transfers in `INTERNAL`; pilot exit criteria met per market before `SOFT_LAUNCH` | Launch board history; `corridor_rollout_stages` timeline per market; Phase 10 launch reports |
+| Incident process operating | Every W3–W6 production incident has an `incidents` row, timeline, roles, status page update where customer-facing and a post-mortem within 5 business days; P1 ack ≤ 5 min and P2 ≤ 15 min during hypercare | `incidents` export; PagerDuty ack-time report; `postmortem_actions` completion rate |
+| Monitoring and alert hygiene | Every alert rule has a resolving `runbook_url`; false-positive rate < 5 % over W3–W6 (T12.18) | Alert hygiene audit sheet; `runbooks-sync.yml` run log |
+| Business continuity | BCP appendices approved; executive tabletop held with ≥ 5 actions; on-call depth ≥ 3 per rotation | `docs/handbooks/bcp.md` with approvals; tabletop minutes; PagerDuty schedule export |
+| Regulatory sign-offs | Gate group `regulatory.<cc>` `PASSED` for every market in `PILOT` or beyond; no advance past `INTERNAL` with a pending gate (T12.13) | `go_live_gates` export with evidence links and approvers; counsel opinions; MLRO letters |
+| Launch comms | Cohort invitations, soft-launch welcome and GA announcement sent per schedule in en/fr/pt; partner SLA notice and status page URL distributed; press held until GA in ≥ 3 markets | `AuditLog` comms approvals; Phase 1 `notifications` delivery counts per template; developer-portal announcement |
+
+---
+
+## 13. Risks & Mitigations
+
+| ID | Risk | Likelihood | Impact | Mitigation | Owner |
+| --- | --- | --- | --- | --- | --- |
+| R12.1 | **Critical/High pentest findings arrive late (W3) or require architectural change**, so remediation and retest miss M12.4 and board #1 slips | Med | High | Pentest starts W2 with staging fully available; vendor delivers findings **daily** as they are confirmed (not only in the final report), so remediation begins in W2; two backend engineers dedicated to remediation; Phase 11 mobile pentest and Phase 10 extension already closed the known classes; architectural findings get a documented compensating control + `RISK_ACCEPTED` by the CTO with a Phase 13 fix only if the vendor agrees in the sign-off letter; board #1 can approve `PILOT` for a subset of markets with hard caps if the open finding is market-specific | Security Engineer |
+| R12.2 | **Pentest vendor schedule slips** (no tester availability in the W2–W3 window, retest capacity in W4) | Med | High | Vendor contracted before W1 with penalty-backed dates; second CREST vendor on retainer for the retest (budgeted §14.2); rules of engagement signed at M12.1; test accounts and staging ready in W1 so the window cannot be lost to onboarding | Security Engineer / PM |
+| R12.3 | **Load test reveals a database bottleneck** (lock contention on `ledger_entries` inserts, slow `transfers` status queries, PgBouncer saturation) that cannot be fixed inside the freeze | Med | High | Campaign 1 on the production-shaped `perf-20271101` branch in W2 leaves two weeks before production campaign 2; top-20 slow queries fixed with indexes already named in §3.2 (expand-only, allowed under freeze); Neon autoscaling to 8 CU and a larger PgBouncer pool are configuration; the capacity model may set a lower documented ceiling with the headroom rule and a Phase 13 action if 1,200 rps is not reached, as long as 900 rps burst holds; `perf:` commits explicitly allowed by the freeze ruleset | Solution Architect |
+| R12.4 | **DR drill fails RTO** (promotion steps slower than scripted, Cloudflare health monitor flaps, sequences collide, `ams` machines cannot reach the standby) | Med | High | `dr-failover.sh --dry-run` and the monthly `dr-test.yml` clone promotion exercised before drill #1; drill #1 is announced and run in a maintenance window so a failure is a learning event, not an outage; every deviation logged in `dr_drills.report`; drill #2 is unannounced only after drill #1 passed; RTO target 35 min leaves 25 min of buffer against the 60 min criterion; sequences advanced by 10,000 at promotion; Fly `ams` secrets pre-staged | DevOps/SRE Lead |
+| R12.5 | **Regulator or partner approval delayed for a market** (COBAC notification via sponsor EMI, CBN licence status, DPA registration acknowledgement) so the `regulatory.<cc>` gate stays `PENDING` | High | Med | Gates are per market, so one market's delay never blocks another; `CM` (anchor) paperwork complete at the end of Phase 8; counsel opinions commissioned in Phase 10; courtesy letters sent W1; a market may stay in `INTERNAL` indefinitely and still reach board #3 with a dated review; §12 "production rollout approved" needs ≥ 3 GA markets, not all | Compliance Analyst / General Counsel |
+| R12.6 | **Provider production credentials or static-IP allow-listing late** for the second region (`ams` egress IPs not allow-listed by MNOs or banks; production keys for a payout partner in wave B missing) | Med | Med | Allow-list requests for `ams` IPs sent to every live provider at M12.1 with a tracking gate `reliability.provider.<key>.ams-allowlist`; DR drill #1 verifies real provider reachability from `ams` with a 1 XAF probe transfer; wave B corridors enter `PILOT` only when their provider gates are green; Phase 3 `provider-sim` keeps load tests independent of real credentials | Head of Partnerships / DevOps |
+| R12.7 | **App store rejection or policy action during hypercare** (an OTA or hotfix build rejected, Play financial-features re-review, listing taken down in one country) leaves mobile users without a fix | Low | Med | Phase 11 listings already live and compliant; no store release is planned in Phase 12 — copy ships by OTA under ADR-0035; hotfixes needing a binary use the expedited-review path and `mobile.min-version` soft prompts; customer portal remains the fallback channel; store-review runbook and licence pack maintained by the mobile lead | Mobile Lead |
+| R12.8 | **Key-person dependency** (one DevOps/SRE owns DR, Cloudflare and the backup account; one compliance analyst owns SOC 2/PCI/regulatory gates) and illness or attrition in a 6-week phase | Med | High | Deputies named in the key-person matrix (backend engineer on DR automation as second DR operator, solution architect as second Cloudflare/Terraform approver, PM + GC as compliance deputies); every DR and backup procedure executed at least once by the deputy during drills; break-glass credentials held by two officers; runbooks are the system of record, not people | PM |
+| R12.9 | **Change-freeze violations** (feature code merged as `fix:`, direct flag edits outside the ladder, infra changes without a change request) introduce regressions during launch | Med | High | `launch-freeze` ruleset with commit-pattern check and two reviewers; `go-live-gates` job refuses production runs without an approved `change_ref` inside freeze windows; `LaunchService` is the only writer of launch flags (direct edits of `transfers.*`/`intl.*` flags require `killswitch:execute` and emit `incident.kill_switch.executed`); Terraform plans reviewed in PRs; weekly freeze audit by the PM listing every bypass as a `change_requests` row of category `freeze` | PM / DevOps |
+| R12.10 | **Hypercare staffing** — three shifts × 14 days per market overlapping with remediation and drills exhaust the team; on-call ack SLAs missed | High | Med | Hypercare windows staggered by the ladder (`CM` leads by a week); roster built at M12.2 with depth ≥ 3 per role and no person on more than 4 shifts a week; overnight hours covered by PagerDuty not by shifts; Phase 13 feature work on `next/*` paused for anyone on roster; exit criteria return markets to BAU after 7 clean days; burnout check in the daily stand-up | Program Manager / COO |
+| R12.11 | **SOC 2 evidence gaps** (controls without evidence, policies not approved, access reviews incomplete) make the readiness assessment report critical gaps and endanger the 2028-01-15 Type I date | Med | Med | Compliance automation platform connected at M12.1 so automated evidence accrues from W1; weekly gap review with the compliance analyst and auditor; policies drafted from the auditor's templates and approved in a single executive session in W3; manual evidence has a named owner per control in `compliance_controls`; Type I date can move by up to 4 weeks without affecting Phase 13 licence applications | Compliance Analyst |
+| R12.12 | **Cloudflare edge misconfiguration** blocks legitimate African mobile traffic (carrier-grade NAT trips rate limits, bot fight mode flags low-end browsers) or exposes the origin | Med | High | Every rule in log mode for 48 h with analysis per pilot-market ASN before block; rate limits keyed on IP + device fingerprint where CGNAT is prevalent; Authenticated Origin Pulls and Fly/Vercel firewall rules; versioned rulesets with one-minute rollback; synthetic probes from Lagos/Nairobi/Dakar detect edge regressions within 2 min | DevOps/SRE Lead |
+| R12.13 | **Logical replication lag or slot bloat** on a 300M-row ledger under campaign 2 load, so RPO is not met or the primary's WAL retention threatens disk | Med | Med | Replication lag alerts at 5 and 10 min; `pg_replication_slots` retained WAL alert at 20 GB; standby compute sized at ≥ 50 % of primary; large backfills avoided under freeze; drop and recreate the subscription from a fresh snapshot is a tested runbook step; PITR + `pg_dump` into RDS remains the documented last resort | DevOps/SRE Lead |
+| R12.14 | **Production load test harms real customers or data** (synthetic traffic hits real rails, pollutes reporting, saturates a shared provider rate limit, or the 01:00–05:00 WAT window overlaps Phase 7 EOD close) | Low | High | Synthetic tenants routed to `provider-sim` by connector routing rule; `is_synthetic` exclusion in every mart; campaign gated by a `change_requests` row with COO approval and the `production-loadtest` environment; `platform.read-only` never used for tests; EOD close timing checked in the change calendar; ledger invariant job and `loadtest-cleanup` within 24 h; abort criteria (real-customer error rate > 0.5 %) in the runbook | Solution Architect / QA Lead |
+| R12.15 | **Anchor market `CM` misses pilot exit criteria** (success rate below 98.5 %, recon breaks, CSAT), delaying wave A corridors that ride its schedule | Med | Med | `CM` has the largest Phase 5 history and enters `INTERNAL` first; exit criteria evaluated hourly from W4 so trends are visible before board #2; board may approve `SOFT_LAUNCH` for other domestic markets independently; wave A corridors can decouple from `CM` by decision if `GA→CM` is green | Program Manager |
+| R12.16 | **Alert fatigue during hypercare** hides a real incident (new SLO alerts, synthetic probes and business anomaly rules all land at once) | Med | Med | Burn-rate alerts instead of raw thresholds; paging only for P1/P2; alert review W3–W6 with a < 5 % false-positive target and a weekly tuning session; every alert has an owner and runbook; synthetic probe flaps require 2 of 4 vantage points; noisy rules demoted to tickets, never deleted silently | DevOps/SRE Lead |
+
+---
+
+## 14. Effort & Cost Drivers
+
+### 14.1 Effort (person-weeks, 6-week phase, whole team)
+
+| Role | Person-weeks | Notes |
+| --- | --- | --- |
+| Backend engineers (4) | 24 | 2 × 6 on pentest remediation and performance (slow queries, indexes, pool tuning, retest support) = 12; 1 × 6 on the `OpsModule` (launch ladder, incidents, changes, findings, controls, status page, PagerDuty sync, kill-switch registry) = 6; 1 × 6 on DR and backup automation (`dr-failover.sh`, `dr-failback.sh`, `dr-sync-sequences.sh`, `backup-verify.yml`, ledger invariant job, `loadtest-cleanup`) = 6 |
+| Frontend engineers (3) | 18 | Operations area in `apps/admin` (launch board, decisions, gates, command centre, incidents, changes, drills, findings, controls, runbooks, hypercare) = 10; public status page, maintenance/read-only states, cohort welcome and CSAT survey in `apps/web` = 4; help-centre launch articles, comms templates tooling, `packages/ui` shared components, Core Web Vitals fixes from performance testing = 4 |
+| Mobile engineers (2) | 10 | ≈ 85 %: remote config `launch.stage` / status banner and maintenance-mode verification (Detox) = 2; mobile pentest delta remediation and retest = 3; store rollout operations, OTA copy updates, Phase 11 rollback drills during W2–W3 = 2; hypercare mobile on-call and support scripts = 3 |
+| QA engineers (2) | 12 | k6 scenario suite and both load campaigns = 4; DR drill #2 (unannounced, QA-led), restore drills, game days = 3; Playwright/Detox e2e for the ops flows, Pact, alert hygiene audit = 2; board UAT, hypercare dry run, pilot exit-criteria verification = 3 |
+| DevOps / SRE (1) | 6 | 100 % — launch lead for reliability: Cloudflare, Fly `ams`, Neon standby, Upstash global, backup account, Grafana/PagerDuty Terraform, workflows, DR drill #1, capacity model |
+| Compliance analyst (1) | 6 | 100 %: SOC 2 scope, control matrix, policies, evidence, auditor liaison; PCI scope and SAQ A; regulatory gate groups per market; BCP compliance appendix; MLRO/GC coordination |
+| Solution architect (1) | 5 | 80 %: D1–D7 ADRs, DR topology review, performance and capacity model, load campaign 2 ownership (M12.3), two-engineer review of DR scripts, Phase 13 playbook |
+| Product designer (1) | 2 | 30 %: operations console information design, status page and maintenance states, cohort invitation and CSAT survey, launch comms visuals |
+| Program manager (1) | 6 | 100 %: board secretary, change calendar and freeze audit, hypercare roster, launch comms plan, vendor and auditor contracts, handover |
+| Security engineer (0.5) | 3 | 0.5 FTE all 6 weeks: pentest scoping, vendor coordination, daily finding triage, phishing exercise, retest, edge/backup security review, sign-off letter |
+| **Total** | **92** | Business owners (COO, MLRO, CFO, GC, Head of Customer Operations, Head of Partnerships) and board members' time not counted as delivery effort; hypercare shifts are included in the role lines above |
+
+Assumptions: 5-day weeks; no new feature work (freeze) so the full roster is available; the `perf-20271101` branch is seeded in W1 by the backend DR engineer with the Phase 2 anonymiser; vendors (pentest, auditor, compliance platform, insurance broker) contracted **before** 2027-11-01 by the PM (pre-phase action); Phase 10 Operational Dashboard and Phase 11 store listings accepted at their phase exits; public holidays in the window (Cameroon and Senegal none; Côte d'Ivoire 2027-11-15 National Peace Day; Kenya 2027-12-12 Jamhuri Day falls after the phase) do not touch the critical path; one slipped pentest week absorbed by the W4 buffer before board #1.
+
+### 14.2 External costs (USD, ranges; assumptions below)
+
+| Item | Low | High | Recurring | Assumptions |
+| --- | --- | --- | --- | --- |
+| External penetration test (API, portals, partner API, mobile delta, cloud configuration review, phishing of 40 admins, retest, sign-off letter) | 45,000 | 90,000 | one-off | CREST/OSCP-grade firm, 20–35 tester days incl. cloud review and phishing; mobile is a delta against the Phase 11 report |
+| Second pentest vendor on retainer for retest capacity (R12.2) | 0 | 15,000 | one-off | 0–5 tester days; only drawn if the primary vendor slips |
+| Grafana k6 Cloud VU-hours for distributed campaigns (steady, peak, soak 8 h, stress, spike ×3, month-end, mobile-storm) × 2 campaigns | 2,000 | 6,000 | one-off | ≈ 1,500–4,000 VU-hours; OSS k6 on Fly machines used for smoke and steady runs |
+| k6 runner machines on Fly (`cdg`/`ams`, performance CPUs for ≈ 60 h) | 200 | 600 | one-off | Destroyed after each campaign |
+| Neon `perf-20271101` production-shaped branch (≈ 1.5 TB logical, 8 CU for ≈ 3 weeks) | 1,500 | 4,000 | one-off | Deleted at M12.4; Scale plan storage and compute rates |
+| DR drill cloud spend (two full drills with `ams` scaled to 3, standby at full compute, monthly `dr-test.yml` clone) | 500 | 2,000 | one-off | Includes failback snapshot and reverse replication |
+| SOC 2 readiness assessment + Type I audit (CPA firm) | 20,000 | 45,000 | one-off | Readiness assessment in this phase; Type I report fee committed now, observation 2028-01-15 |
+| Compliance automation platform (Vanta or Drata — Q12.3), ≈ 40 users, 9 integrations | 10,000 | 25,000 | annual | Entry to mid tier; device agents included |
+| PCI QSA gap assessment and SAQ A support (scope memo review, 6.4.3 / 11.6.1 evidence review) | 5,000 | 15,000 | one-off | 3–8 QSA days; SAQ A is self-attested so no RoC fee |
+| ASV quarterly external scans (5 hostnames) | 1,000 | 3,000 | annual | PCI SSC-approved scanning vendor |
+| External counsel per market (licence/partner-model opinions, DPA registrations, consumer-protection review, courtesy letters) — 6 markets | 18,000 | 45,000 | one-off | 2–5 counsel days per market; templates reused from Phases 2, 8 and 9 |
+| Data-protection registration fees (NDPC, ODPC, DPC, CDP, ARTCI, CEMAC states) | 500 | 3,000 | one-off | Statutory fees only |
+| Insurance: cyber liability, technology E&O, crime/fidelity (first year) | 25,000 | 80,000 | annual | Limits sized to pilot-market exposure and partner contract requirements; broker quote at M12.1 |
+| Cloudflare (Business or Enterprise-lite zone, Load Balancing with 2 origins + health checks, WAF managed rules, rate limiting, Logpush) | 250 | 1,500 | monthly | Business plan + LB add-ons at the low end; Enterprise starter if bot management is required |
+| Fly `ams` warm standby (1 × `shared-cpu-4x` 2 GB always on; 3 during drills) and `cdg` `min_machines_running` 2 → 3 | 60 | 250 | monthly | Excludes autoscaling growth already in the Phase 5 capacity line |
+| Neon standby project `bi-rem-standby` (`aws-eu-west-2`, 2–4 CU, replicated storage) | 400 | 1,200 | monthly | Compute always on to keep lag low; storage mirrors production |
+| Neon production PITR 7 → 30 days (history storage) | 150 | 600 | monthly | Depends on daily WAL volume at 100k tx/day |
+| Upstash regional → global database with read replica | 50 | 200 | monthly | Replica region `eu-west-1`; same command volume |
+| AWS backup account: S3 Object Lock + CRR + KMS + Glacier Deep Archive, CloudTrail, Secrets Manager | 100 | 400 | monthly | ≈ 35 daily dumps hot + month-end archive; CRR data transfer |
+| Synthetic monitoring (Grafana Synthetic Monitoring or Checkly — Q12.4), 4 vantage points × 4 checks at 60 s | 150 | 600 | monthly | African probe locations may require private probes on small VMs (included at the high end) |
+| PagerDuty (Business tier) for ≈ 15–25 on-call users across 5 services | 600 | 1,500 | monthly | Annual contract priced monthly; Slack and Grafana integrations included |
+| Grafana Cloud plan step (series for SLO recording rules, Loki 400-day retention for `audit`/`auth`, alerting) | 300 | 1,200 | monthly | Pro tier usage growth over the Phase 1 plan |
+| Sentry quota increase during hypercare | 0 | 200 | monthly | Phase 11 quota mostly sufficient |
+| Localisation review of launch comms, help-centre launch articles and status page copy (fr/pt) | 1,500 | 4,000 | one-off | ≈ 10,000 words professional review |
+| Launch marketing and PR | — | — | — | **Excluded** — marketing budget sits with the CMO and is embargoed until GA in ≥ 3 markets |
+| **Total one-off** | **≈ 94,200** | **≈ 229,600** | | pentest, retainer, load tooling, perf branch, DR drills, auditor, QSA, counsel, DPA fees, localisation |
+| **Total recurring** | **≈ 60,700** | **≈ 199,800** | | first year: annual items 36,000–108,000 plus monthly items 2,060–7,650 × 12 |
+| **Total first year** | **≈ 155,000** | **≈ 429,000** | | |
+
+Assumptions: USD; 1M users / 100k transactions/day / 50 providers / 20 countries target scale; staff costs, on-call stipends and board members' time excluded; Fly, Neon and Vercel baseline spend from Phases 1–11 excluded (only the Phase 12 delta is listed); bug bounty (Phase 13 decision), SOC 2 Type II audit fees (Phase 13) and ISO 27001 excluded; vendor quotes to be confirmed at M12.1 and recorded in `change_requests` of category `vendor`.
+
+---
+
+## 15. Dependencies & Handover
+
+### 15.1 Needs from earlier phases (verified against the repo and sibling plans)
+
+| Phase | Needed | Status / verification |
+| --- | --- | --- |
+| 8 — AML, Fraud & Compliance (ended 2027-09-17) | MLRO sign-off package and every Phase 8 §12 criterion green; regulator contact matrix (feeds `incidents.regulator_notify_by` and the courtesy letters); planted-name rehearsal script (reused as a hypercare game day); `aml.*` kill switches registered on the Kill Switch Panel; compliance on-call rotation seed; STR-deadline and sanctions-hit runbooks | Phase 8 plan §15 hands exactly these to "12 — Go-Live"; verified at Phase 8 exit; gate keys `compliance.aml.mlro-signoff`, `compliance.aml.regulator-matrix` created by `ops:backfill:gates` |
+| 9 — Partner & Merchant Portal (ended 2027-10-01) | Partner support runbooks and settlement-day procedure (imported into `runbooks`); API status page content and the 99.9 % SLA text (status page components `partner-api`, SLA activation notice at `SOFT_LAUNCH`); developer-portal announcement channel; canary procedure for partner flags (`partner.portal.enabled` with `rules: countryCode`); `partner-api` on-call rotation; `platform.status` partner webhook | Phase 9 plan §15 handover row for Phase 12; Phase 9 D6 anticipated the edge WAF added here |
+| 10 — Reporting & BI (ended 2027-10-29) | Operational Dashboard accepted by the COO as the command centre (M10.6); `EXECUTIVE_PACK` readiness-pack variant for board packs; daily executive e-mail and the launch-report schedule; Grafana/PagerDuty alert parity (tile thresholds mirror alerts); `docs/handbooks/go-live-command-centre.md`; `is_synthetic` dimension for load-test exclusion; `kpi_daily` for backup row-count tie-outs; Q10.10 answered (logical replication enabled on the production Neon project) | Phase 10 plan §1 "Unlocks" and §11/§15; the Q10.10 answer is a hard prerequisite for M12.2 and is confirmed at M12.1 |
+| 11 — Mobile (ended 2027-10-15) | Both store listings live with custody of store accounts documented; store-review, rollout-halt, force-update, OTA and pin-rotation runbooks; release-train calendar with the Phase 12 freeze windows; device-support matrix; mobile alerts and Sentry projects; `mobile.hard-min-version.*` kill switch; `GET /v1/mobile/config` extension point for `launch.stage` and `statusPage.url`; `MAINTENANCE` handling in the error layer | Phase 11 plan §15.2 handover row for "12 — Go-Live"; mobile section of this checklist derives from Phase 11 §11 |
+| 1 — Foundation (transitive) | Fly `cdg`, Neon `eu-central-1`, Vercel `cdg1`, Upstash; `FeatureFlag`/`Setting`/`AuditLog`/`Outbox`/`ApiKey`; `prom-client` metrics and `/health/*`; `infra/scripts/db-backup.sh`, `db-restore.sh`, `smoke-test.sh`; `deploy-api.yml` → `fly-deploy.yml` with the `production` Environment and the pre-deploy release step; `security.yml`; `infra/aws/README.md` cold alternative | Verified in repo (`.github/workflows/*`, `infra/`) |
+| 3 / 4 / 5 / 6 / 7 (transitive) | Provider health and `GET /v1/status/public` (3); connector kill switches `wallet.connector.<key>.live` and static-IP allow-lists (4); `transfers` saga, ledger invariants, `transfers.domestic.<cc>.live` (5); corridor status machine, `intl.*` flags, corridor keys used as `market_key` (6); `intl.fx.freeze` and EOD close timing for the load-test window (7) | Plans §15 of each phase; flag keys confirmed in the Phase 1 `feature_flags` seed at M12.1 |
+
+### 15.2 Hands to later phases
+
+| Phase | Hand-over | Where |
+| --- | --- | --- |
+| **13 — Pan-African Expansion** (2028-01-03) | A production platform under SLO with error budgets and the budget policy; `corridor_rollout_stages` ladder and `go_live_gates` as the **corridor launch playbook** (new country = gate group `regulatory.<cc>` + stage rows + flags, no code; Phase 6 `FRIENDS_FAMILY` maps to `PILOT`, `LIVE` to `SOFT_LAUNCH` then `GENERAL_AVAILABILITY`); go/no-go board charter, decision template and readiness pack reused per country wave; incident, change and hypercare processes owned by named rotations (on-call extended to a second cell in Phase 13); DR warm standby by logical replication (the London standby stays; a future African primary gets its own DR design — Q12.6); backup account and verification jobs; SOC 2 Type I report (observation 2028-01-15) feeding licence applications and the Type II window, with the compliance automation platform collecting evidence from both cells; PCI SAQ A attestation (to be upgraded if card flows change); Cloudflare zone and Terraform modules; hypercare for the last `SOFT_LAUNCH` markets closes in Phase 13 W1; USSD short-code applications (Q11.6) were **not** filed under the freeze and start in Phase 13 W1; Phase 10–11 contract migrations deferred to Phase 13 W1 (§5.3) | `docs/handbooks/corridor-launch-playbook.md`, `docs/handbooks/{slo,incident-management,hypercare,bcp}.md`, admin `/ops/*`, `infra/terraform/modules/*`, `docs/compliance/{soc2,pci}/*` |
+| **Operations (BAU)** | On-call rotations and escalation policies; runbook catalogue with `last_tested_at`; weekly backup verification, monthly `dr-test.yml`, quarterly restore drill and ASV scan calendar; semi-annual BCP review; monthly SLO review and error-budget meeting; change calendar | PagerDuty, `runbooks`, `change_requests`, Grafana `SLO` |
+| **Phase 8 / Compliance (ongoing)** | Regulator notification clock and templates; incident records as regulatory evidence; `controls:*` for the compliance officer; expiring-evidence report | `incidents`, `incident_comms_templates`, `/ops/controls` |
+| **Phase 9 / Partners (ongoing)** | Public status page and `platform.status` webhook; SLA reporting from SLO 6 (webhook delivery) and SLO 1 | `status.bi-rem.africa`, `/ops/slo` |
+| **Phase 11 / Mobile (ongoing)** | `launch.stage` and `statusPage.url` in remote config; maintenance-mode behaviour verified; mobile hypercare scripts | `GET /v1/mobile/config`, support scripts |
+
+### 15.3 Open questions
+
+| ID | Question | Owner | Needed by |
+| --- | --- | --- | --- |
+| Q12.1 | Go/no-go board constitution: voting members (CEO, COO, CFO, MLRO, GC proposed), quorum (≥ 4 incl. MLRO for any market advance?), and whether the CTO has a veto on reliability gates | CEO / PM | 2027-11-05 (M12.1) |
+| Q12.2 | Pilot cohort source and size per market: Phase 2 waiting list only, or also staff referrals; 500 cap confirmed by treasury against nostro coverage per market | COO / Head of Treasury | 2027-11-12 (M12.2) |
+| Q12.3 | Compliance automation platform: Vanta or Drata (integration coverage for Fly and Neon via custom API, auditor familiarity, price) | Compliance Analyst / CTO | 2027-11-05 (M12.1) |
+| Q12.4 | Synthetic monitoring: Grafana Synthetic Monitoring (public probes, no Lagos/Dakar locations — private probes on small VMs needed) vs Checkly (more locations, separate vendor for SOC 2) | DevOps/SRE Lead | 2027-11-12 (M12.2) |
+| Q12.5 | Counsel confirmation per market that replicating PII to the London standby (`aws-eu-west-2`) is permitted (UK adequacy for EU-held data; NDPC/ODPC/CDP/ARTCI cross-border transfer conditions) and which regulators need notification of processing locations | General Counsel | 2027-11-19 (M12.3) |
+| Q12.6 | Phase 13 primary database location: stay on Neon `eu-central-1` with the London standby, or move the primary nearer to African regions (RDS/Aurora in `af-south-1` loses Neon branching) — options paper only in this phase | Solution Architect | 2027-12-10 (M12.6) |
+| Q12.7 | Wave C corridors (`CM→CV`, `CM→ST`): is partner readiness confirmed so they may enter `INTERNAL` in this phase, or do they stay `SANDBOX` until Phase 13 | Head of Partnerships | 2027-12-03 (M12.5) |
+| Q12.8 | Insurance limits and carriers for cyber, technology E&O and crime/fidelity; whether sponsor banks or Phase 9 enterprise partners impose minimum limits | CFO / General Counsel | 2027-11-19 (M12.3) |
+| Q12.9 | Status page naming policy: may providers be named (e.g. "MTN MoMo Cameroon") where the Phase 9 SLA already names them, or business-level names only (§8.1 "attack oracle") | Comms lead / Security Engineer | 2027-11-19 (M12.3) |
+| Q12.10 | Hypercare exit for markets still in `SOFT_LAUNCH` at M12.6: who owns the dated review in Phase 13 W1 and which board quorum applies over the holiday period | COO / Phase 13 lead | 2027-12-10 (M12.6) |
+| Q12.11 | Bug bounty programme: launch after the retest is clean (private programme, Phase 13 budget) or defer until SOC 2 Type I is issued | Security Engineer / CTO | 2027-12-10 (M12.6) |
+| Q12.12 | Regulator courtesy notifications: which markets expect a formal go-live notification (CBN, CBK, BoG) versus none, and lead time before `SOFT_LAUNCH` | Compliance Analyst / General Counsel | 2027-11-12 (M12.2) |
+
+### 15.4 Operational procedures established in Phase 12
+
+- Go/no-go board cycle per ladder step (readiness pack from the Launch board, decision with votes and conditions, two approvals, atomic stage advance, Slack `#launch` notice, minutes filed).
+- Change management under freeze and in BAU (change request, calendar, freeze windows, `go-live-gates` on every production promotion, post-implementation record of digests for rollback).
+- Release-candidate and staging-soak procedure (RC tag, 24 h soak with `steady-300rps`, same digest promoted, automatic rollback on failed post-deploy smoke).
+- Incident management (declare, roles, severity, 15/30/60-minute updates, status page, regulator clock, kill switches with two-person rule, blameless post-mortem within 5 business days, action tracking).
+- Hypercare operation (three shifts, 08:00 WAT stand-up, auto-generated launch report, tightened P1/P2 SLAs, exit criteria and BAU transition gate).
+- DR failover and failback with `dr-failover.sh` / `dr-failback.sh`, monthly non-disruptive `dr-test.yml`, replication lag and slot monitoring, sequence sync every 5 minutes.
+- Backup lifecycle (nightly Object-Locked dumps, weekly automated restore verification, quarterly manual restore drill incl. object storage and Redis, break-glass access matrix).
+- SLO review and error-budget policy (monthly review, burn-rate paging, rollout freeze below 25 % budget, alert hygiene audit each quarter).
+- Vulnerability and finding management (`security_findings` SLAs by severity, CI import from CodeQL/Trivy/ZAP, annual pentest, quarterly ASV scan, risk acceptance by the CTO).
+- SOC 2 evidence collection (automated via the compliance platform, manual evidence per control with reviewer sign-off, quarterly access reviews, vendor assessment renewals, expiring-evidence report).
+- PCI SAQ A annual re-attestation with provider AoC tracking and the 6-hourly funding-page script-inventory check.
+- Regulatory gate maintenance per market (licence/partner confirmations, DPA registrations, consumer disclosures, courtesy notifications) reused by Phase 13 for every new country.
+- Status page operation (component mirroring from provider health, manual overrides, localized updates, partner webhook, cache purge).
+- Load-test campaign procedure (change request, off-peak window, synthetic tenants, thresholds in code, results registry, cleanup, ledger invariant check) rerun before any capacity change.
