@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@bi-rem/shared": "workspace:*",
-    "@hookform/resolvers": "^7.0.5",
-    "@tanstack/react-query": "^5.107.1",
+    "@hookform/resolvers": "^7.0.7",
+    "@tanstack/react-query": "^5.108.1",
     "next": "^16.4.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-hook-form": "^7.91.0",
+    "react-hook-form": "^7.92.0",
     "server-only": "^0.0.1",
     "zod": "^4.6.7"
   },
@@ -36,8 +36,8 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "eslint": "^9.39.5",
-    "jsdom": "^31.0.0",
-    "postcss": "^8.5.32",
+    "jsdom": "^31.0.1",
+    "postcss": "^8.5.33",
     "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
